@@ -70,7 +70,7 @@ from store import Participant, Stage
 
 STUDY_SMS_NUMBER = os.environ.get("STUDY_SMS_NUMBER", "+1 (507) 431-7807")
 ORG_NAME = os.environ.get("ORG_NAME", "Child Mind Institute")
-CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "research@childmind.org")
+CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "arno.klein@childmind.org")
 PRIVACY_URL = "https://childmind.org/privacy/"
 TERMS_URL = "https://childmind.org/terms/"
 
