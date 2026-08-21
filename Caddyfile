@@ -1,0 +1,47 @@
+# Caddy obtains and renews Let's Encrypt certificates automatically. The only
+# prerequisite is that the hostname's DNS A record already points at this
+# droplet, and that Cloudflare proxying is OFF (grey cloud) for the first
+# issuance, so the HTTP challenge can reach this server.
+#
+# Add a study by copying a site block and pointing it at a new service.
+
+{
+	# EDIT: a real address you read. Let's Encrypt sends expiry warnings here.
+	email arno.klein@childmind.org
+}
+
+study.arnoklein.info {
+	# Container name from compose.yml, resolved on the compose network.
+	reverse_proxy dash:8000
+
+	# The linkage export is the key connecting transcripts to participants.
+	# Restrict it to known addresses even though it also requires a token.
+	# EDIT: replace 203.0.113.4 with your own address (curl ifconfig.me).
+	# Multiple addresses are space separated: remote_ip 1.2.3.4 5.6.7.8
+        @admin path /admin/*
+        handle @admin {
+                route {
+                        @blocked not remote_ip 66.108.16.59 2603:7000:6400:6b1::/64
+                        respond @blocked 404
+                        reverse_proxy dash:8000
+                }
+        }
+	encode gzip
+
+	# Access logs stay on the server and are useful for reconciling a
+	# participant's report against what actually happened. They contain IP
+	# addresses, so treat the file as participant data.
+	log {
+		output file /data/access-dash.log {
+			roll_size 10mb
+			roll_keep 5
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+	}
+}

@@ -1,0 +1,5 @@
+# Pinned for reproducibility. Bump deliberately, never automatically: a study
+# in the field should not change underneath its participants.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20

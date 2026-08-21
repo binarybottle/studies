@@ -1,0 +1,55 @@
+# Study hosting stack: Caddy terminating TLS in front of one container per study.
+#
+# Adding a second study means adding a service block here and a site block in
+# Caddyfile. Nothing else changes, and studies stay isolated from each other.
+#
+#   docker compose up -d          # start everything
+#   docker compose logs -f dash   # follow one study's logs
+#   docker compose up -d --build dash   # redeploy after a code change
+#
+# The dash_data volume holds study.db, which is the only link between Retell
+# transcripts and Prolific submissions. It is deliberately a named volume
+# rather than a bind mount so that `docker compose down` cannot remove it by
+# accident, and it is what the backup cron job archives.
+
+services:
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data      # certificates; losing this re-requests them
+      - caddy_config:/config
+    depends_on:
+      - dash
+
+  dash:
+    build: ./dash
+    restart: unless-stopped
+    env_file:
+      - ./dash/.env
+    environment:
+      STUDY_DB_PATH: /data/study.db
+    volumes:
+      - dash_data:/data
+    # No ports section: the app is reachable only through Caddy, never
+    # directly on a public port.
+    expose:
+      - "8000"
+    healthcheck:
+      # /sms-terms is public, static, and touches no participant state, so it
+      # is a safe liveness probe.
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/sms-terms')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  caddy_data:
+  caddy_config:
+  dash_data:
