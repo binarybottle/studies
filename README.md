@@ -10,7 +10,7 @@ main `README.md`. This document is only about getting it running.
 
 - [Part 1 — First-time setup](#part-1--first-time-setup): once per droplet.
 - [Part 2 — Rebuild and deploy](#part-2--rebuild-and-deploy): every code change.
-- [Part 3 — Operating](#part-3--operating): backups, logs, troubleshooting.
+- [Part 3 — Operating](#part-3--operating): data export, backups, logs, troubleshooting.
 
 ---
 
@@ -290,7 +290,7 @@ Run these on the droplet, from `~/studies`.
 | Restart | `docker compose restart dash` |
 | Shell in the container | `docker compose exec dash sh` |
 | Stage counts | `docker compose exec dash python -c "import store; store.init_db(); print(store.summary())"` |
-| Export linkage table | `curl "https://study.arnoklein.info/admin/linkage.csv?token=TOKEN"` — run from your laptop, on the allow-listed IP; `TOKEN` is `ADMIN_TOKEN` from `~/studies/dash/.env` |
+| Export linkage table | see [Exporting data](#exporting-data) |
 | Disk / memory | `df -h && free -h` |
 | Stop everything | `docker compose down` |
 
@@ -298,10 +298,118 @@ Run these on the droplet, from `~/studies`.
 including `dash_data` and therefore `study.db`. Plain `docker compose down`
 is safe. Likewise avoid `docker system prune --volumes`.
 
+## Exporting data
+
+`backup.sh` and the CSV export are unrelated operations, and it is easy to
+reach for the wrong one:
+
+| | `backup.sh` | `/admin/linkage.csv` |
+|---|---|---|
+| Produces | binary SQLite file | CSV text |
+| Purpose | disaster recovery | analysis |
+| Where | `~/studies/backups/` on the droplet | downloaded to your laptop |
+| When | nightly from cron, unattended | whenever you want current data |
+| Readable as a table | no | yes |
+
+You do not need to run a backup before exporting. The endpoint reads the
+live database, so the CSV is current as of the moment you call it.
+
+### Pulling the linkage table
+
+From your laptop, on the allow-listed IP:
+
+```bash
+TOKEN=$(ssh arno@DROPLET_IP 'grep ^ADMIN_TOKEN ~/studies/dash/.env | cut -d= -f2')
+curl -s "https://study.arnoklein.info/admin/linkage.csv?token=$TOKEN" \
+    -o "linkage-$(date +%F).csv"
+```
+
+A `404` means either a wrong token **or** an IP that is not allow-listed.
+The endpoint returns 404 rather than 403 deliberately, so a prober cannot
+confirm it exists — which also means it cannot tell you which of the two
+went wrong. Check `curl ifconfig.me` against the `remote_ip` line in
+`Caddyfile` first, since that is the one that changes on its own.
+
+Columns, from [`linkage_export`](dash/study_site.py):
+
+| Column | Meaning |
+|---|---|
+| `prolific_pid` | Prolific participant ID. Joins to Prolific's export. |
+| `session_id` | Prolific session ID. |
+| `code` | The one-time code issued at consent. |
+| `chat_id` | Retell chat ID. Joins to the transcript. Empty until the participant texts in. |
+| `stage` | `arrived`, `consented`, `texting`, `complete`, or `withdrew`. |
+| `attention_failures` | Count of checks recorded as failed. |
+| `checks_seen` | Count of checks that ran at all. A failure count of 0 means something different when this is 0. |
+| `consented_at` | Unix timestamp, or empty. |
+
+`phone_hash` is stored but deliberately not exported. The plaintext number
+is never stored at all.
+
+### Assembling the complete table
+
+The linkage CSV is a **key, not a dataset**. It carries no demographics and
+no transcript text. A complete table is a join across three sources:
+
+| Source | How to get it | Join column |
+|---|---|---|
+| Linkage | the `curl` above | — |
+| Demographics, submission status, time taken | Prolific → your study → Data → export CSV | `prolific_pid` |
+| Transcripts, chat analysis | Retell dashboard or API export | `chat_id` |
+
+This split is the privacy design, not an inconvenience. The linkage lives
+on this droplet precisely so that Retell never stores a direct identifier
+next to a conversation; see the docstring on `linkage_export` in
+`dash/study_site.py`. Joining the three files reverses that separation, so
+the assembled table is the most sensitive artifact the study produces.
+Keep it off shared drives and out of the repo.
+
+```python
+import pandas as pd
+
+linkage = pd.read_csv("linkage-2026-08-21.csv")
+prolific = pd.read_csv("prolific_export.csv")
+retell = pd.read_csv("retell_chats.csv")
+
+merged = (
+    linkage
+    .merge(prolific, left_on="prolific_pid", right_on="Participant id", how="left")
+    .merge(retell, on="chat_id", how="left")
+)
+merged.to_csv("study-complete-2026-08-21.csv", index=False)
+```
+
+**Verify the header names against the actual files before trusting that
+snippet.** Prolific's export has used `Participant id` with that exact
+capitalisation, and Retell's export shape depends on how you pull it, but
+both are outside this repository's control and neither is pinned by
+anything here. `print(prolific.columns.tolist())` costs nothing.
+
+Two checks worth running on the result, because both failures are silent:
+
+```python
+# Anyone who never texted in -- whether they dropped at the information
+# sheet or after consenting -- has an empty chat_id, so their Retell columns
+# are legitimately blank. Expected, not a join failure. Cross-tabulate
+# against stage to see where they actually stopped.
+print(linkage.groupby("stage")["chat_id"].apply(lambda c: c.isna().sum()))
+
+# Rows that should have matched and did not. This one is a real problem.
+matched = merged["Participant id"].notna().sum()
+print(f"{matched} of {len(linkage)} matched Prolific")
+```
+
+A participant at stage `complete` with no Prolific match usually means the
+export was pulled before they submitted; re-export rather than assuming the
+linkage is wrong.
+
 ## Backups
 
 `study.db` is the only key connecting Retell transcripts to Prolific
 submissions. Losing it makes every transcript permanently unattributable.
+
+This is disaster recovery, not data export — for a CSV you can analyse, see
+[Exporting data](#exporting-data) above.
 
 ```bash
 chmod +x ~/studies/backup.sh
