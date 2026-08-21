@@ -8,6 +8,10 @@ For what the application *does* — the participant journey, Retell wiring,
 Prolific completion codes, and the privacy design for IRB review — see the
 main `README.md`. This document is only about getting it running.
 
+- [Part 1 — First-time setup](#part-1--first-time-setup): once per droplet.
+- [Part 2 — Rebuild and deploy](#part-2--rebuild-and-deploy): every code change.
+- [Part 3 — Operating](#part-3--operating): backups, logs, troubleshooting.
+
 ---
 
 ## Files
@@ -20,15 +24,24 @@ studies/
     dash/
         Dockerfile       Pinned Python 3.12 runtime
         requirements.txt Pinned dependencies
-        env.example      Template — copy to .env
+        env.example      Template — copy to .env on the droplet
         study_site.py    The application
         store.py         SQLite persistence
 ```
 
-Only two files need editing: `Caddyfile` (two `EDIT:` markers) and
+This laptop directory is the source of truth for everything except `.env`,
+which exists only on the droplet and is never committed. Deployment is
+`scp` + `docker compose up --build`; the droplet does not pull from git.
+
+Only two files need editing at setup: `Caddyfile` (two `EDIT:` markers) and
 `dash/.env`. Everything else is used as-is.
 
 ---
+
+# Part 1 — First-time setup
+
+Do this once, when creating the droplet. If the site is already running, skip
+to [Part 2](#part-2--rebuild-and-deploy).
 
 ## 1. Droplet
 
@@ -39,8 +52,6 @@ DigitalOcean → Create → Droplets.
 - **Size:** Basic → Regular → 1 GB / 1 vCPU ($6/mo) is sufficient
 - **Authentication:** SSH key
 - **Backups:** enable ($1.20/mo — the droplet holds the linkage database)
-
----
 
 ## 2. Harden and install Docker
 
@@ -71,7 +82,9 @@ first.** Locking yourself out here means rebuilding the droplet.
 
 ### Swap
 
-The 1 GB droplet can run out of memory while building Python wheels.
+The 1 GB droplet can run out of memory while building Python wheels. Without
+swap, `pip install` is killed partway through every rebuild, not just this
+first one.
 
 ```bash
 sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile
@@ -81,8 +94,6 @@ echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 
 Reboot if the login banner asks for it; this also activates the `docker`
 group membership.
-
----
 
 ## 3. DNS
 
@@ -104,11 +115,9 @@ If this domain is ever moved behind Cloudflare, keep the record **DNS-only
 (grey cloud)** until the certificate is issued. The proxy intercepts the
 HTTP-01 challenge.
 
----
+## 4. First upload
 
-## 4. Upload
-
-From the directory containing this bundle:
+From this directory on your laptop:
 
 ```bash
 ssh arno@DROPLET_IP 'mkdir -p ~/studies/dash'
@@ -116,7 +125,9 @@ scp compose.yml Caddyfile backup.sh arno@DROPLET_IP:~/studies/
 scp dash/* arno@DROPLET_IP:~/studies/dash/
 ```
 
----
+`scp dash/*` is safe **only here**, before `.env` exists on the droplet. For
+every later upload use the deploy command in
+[Part 2](#part-2--rebuild-and-deploy), which excludes `.env`.
 
 ## 5. Configure
 
@@ -149,8 +160,6 @@ incomparable, which silently breaks repeat-handset detection.
 The three `PROLIFIC_CC_*` values can stay as placeholders until the Prolific
 study exists; update them later and run `docker compose up -d dash`.
 
----
-
 ## 6. Start
 
 ```bash
@@ -159,17 +168,8 @@ docker compose up -d
 docker compose logs -f caddy      # watch for certificate issuance
 ```
 
-Verify:
-
-```bash
-curl -I https://study.arnoklein.info/sms-terms        # expect 200
-curl -I https://study.arnoklein.info/admin/linkage.csv # expect 404 from the droplet
-```
-
-The second check confirms the IP restriction is active: requests from the
-droplet itself are not your home address, so they are refused.
-
-Walk the participant path in a browser:
+Then run the [verification checks](#verify) below, and walk the participant
+path in a browser:
 
 ```
 https://study.arnoklein.info/start?PROLIFIC_PID=test123456789012345678
@@ -178,9 +178,127 @@ https://study.arnoklein.info/start?PROLIFIC_PID=test123456789012345678
 Information sheet → consent → a five-character code and the study phone
 number.
 
+## 7. Install backups
+
+See [Backups](#backups) in Part 3. Do this before the study opens, not after.
+
 ---
 
-## 7. Backups
+# Part 2 — Rebuild and deploy
+
+The everyday loop: edit on the laptop, upload, rebuild the `dash` service.
+Caddy and its certificates are never touched.
+
+## Deploy
+
+From this directory on your laptop:
+
+```bash
+DROPLET=arno@DROPLET_IP
+
+rsync -av --exclude '.env' --exclude '__pycache__' dash/ "$DROPLET":~/studies/dash/
+scp compose.yml Caddyfile backup.sh "$DROPLET":~/studies/
+ssh "$DROPLET" 'cd ~/studies && docker compose up -d --build dash'
+```
+
+The `--exclude '.env'` is the part that matters. The droplet's `.env` holds
+the real `PHONE_HASH_SALT`; overwriting it with the template silently breaks
+repeat-handset detection for every participant after that point, and the
+original salt is not recoverable. `rsync` also skips unchanged files, so a
+one-line edit uploads one file.
+
+Save the block as `deploy.sh` if you prefer, but keep the exclude.
+
+## Not every change needs a rebuild
+
+| What changed | Command (on the droplet, in `~/studies`) |
+|---|---|
+| `study_site.py`, `store.py` | `docker compose up -d --build dash` |
+| `requirements.txt`, `Dockerfile` | `docker compose up -d --build dash` (slow — reinstalls wheels) |
+| `dash/.env` | `docker compose up -d dash` — no build; recreates the container so it re-reads the file |
+| `Caddyfile` | `docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile` — it is mounted read-only, so no rebuild at all |
+| `compose.yml` | `docker compose up -d` |
+| Nothing; just wedged | `docker compose restart dash` |
+
+`--build dash` rebuilds only the dash image and recreates that one container.
+The `dash_data` volume carries `study.db` across the rebuild, so participant
+records survive. Expect about 20 seconds on the 1 GB droplet.
+
+`Dockerfile` installs dependencies before copying the source, so when
+`requirements.txt` is unchanged the `pip install` layer should come back
+`CACHED` and a source-only edit costs a few seconds. If the build log shows
+that step running for real (~14 s), its cache was invalidated — usually
+because `requirements.txt` genuinely changed, or the build cache was pruned.
+Harmless either way, just slower.
+
+If the study is live, run `./backup.sh` first when the change touches
+`store.py` or anything schema-shaped. It is cheap insurance on the one file
+that cannot be regenerated.
+
+## Verify
+
+```bash
+docker compose ps    # dash should reach "healthy" within ~40s
+```
+
+Both `curl` checks below are run **on the droplet** — the expected `404` in
+the second one depends on that:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://study.arnoklein.info/sms-terms
+# expect 200
+
+curl -s -o /dev/null -w '%{http_code}\n' https://study.arnoklein.info/admin/linkage.csv
+# expect 404 -- from the droplet, which is not your home address
+```
+
+The second check confirms the IP restriction is active: requests originating
+on the droplet itself are refused.
+
+**Do not use `curl -I` for these.** `-I` sends a HEAD request, every route is
+declared `@app.get`, and FastAPI does not auto-register HEAD — so a perfectly
+healthy site answers `405` with `allow: GET`. That 405 arriving with both
+`server: Caddy` and `server: uvicorn` headers actually proves the whole path
+works, but it reads like a failure. The `%{http_code}` form above sends a real
+GET.
+
+## Rolling back
+
+Images are not tagged per deploy, so the way back is the source:
+
+```bash
+git checkout <good-commit> -- dash/
+# redeploy, then git checkout main -- dash/ when done
+```
+
+Which is the argument for committing before deploying, so that "the version
+participants saw last Tuesday" is a thing that exists.
+
+---
+
+# Part 3 — Operating
+
+## Quick reference
+
+Run these on the droplet, from `~/studies`.
+
+| Task | Command |
+|---|---|
+| Follow logs | `docker compose logs -f dash` |
+| Last 100 log lines | `docker compose logs --tail 100 dash` |
+| Container status | `docker compose ps` |
+| Restart | `docker compose restart dash` |
+| Shell in the container | `docker compose exec dash sh` |
+| Stage counts | `docker compose exec dash python -c "import store; store.init_db(); print(store.summary())"` |
+| Export linkage table | `curl "https://study.arnoklein.info/admin/linkage.csv?token=TOKEN"` — run from your laptop, on the allow-listed IP; `TOKEN` is `ADMIN_TOKEN` from `~/studies/dash/.env` |
+| Disk / memory | `df -h && free -h` |
+| Stop everything | `docker compose down` |
+
+**Never run `docker compose down -v`.** The `-v` flag deletes named volumes,
+including `dash_data` and therefore `study.db`. Plain `docker compose down`
+is safe. Likewise avoid `docker system prune --volumes`.
+
+## Backups
 
 `study.db` is the only key connecting Retell transcripts to Prolific
 submissions. Losing it makes every transcript permanently unattributable.
@@ -200,26 +318,24 @@ and a plain copy taken mid-write can be unrestorable. Verifies the copy opens
 and counts rows before keeping it. Prunes past 30 days.
 
 Copy backups off the droplet periodically — DigitalOcean's droplet backups
-are weekly, which is coarser than a study needs.
+are weekly, which is coarser than a study needs:
 
----
+```bash
+rsync -av arno@DROPLET_IP:~/studies/backups/ ./backups/
+```
 
-## Operating
+### Restoring
 
-| Task | Command |
-|---|---|
-| Redeploy after a code change | `docker compose up -d --build dash` |
-| Follow logs | `docker compose logs -f dash` |
-| Restart | `docker compose restart dash` |
-| Shell in the container | `docker compose exec dash sh` |
-| Stage counts | `docker compose exec dash python -c "import store; store.init_db(); print(store.summary())"` |
-| Export linkage table | `curl "https://study.arnoklein.info/admin/linkage.csv?token=$ADMIN_TOKEN"` |
+```bash
+docker compose stop dash
+docker run --rm -v studies_dash_data:/data -v ~/studies/backups:/b \
+    alpine cp /b/study-2026-08-20.db /data/study.db
+docker compose start dash
+```
 
-**Never run `docker compose down -v`.** The `-v` flag deletes named volumes,
-including `dash_data` and therefore `study.db`. Plain `docker compose down`
-is safe.
-
----
+The volume is `studies_dash_data` — Compose prefixes the volume name from
+`compose.yml` with the project directory name. Confirm with `docker volume ls`
+before typing it.
 
 ## Adding a second study
 
@@ -232,9 +348,10 @@ is safe.
 Studies stay isolated: separate containers, separate volumes, separate
 databases.
 
----
-
 ## Troubleshooting
+
+**`405` from a `curl -I` check.** Not a fault. See
+[Verify](#verify) above — use the `%{http_code}` GET form.
 
 **Caddy loops requesting a certificate.** DNS has not propagated, or the name
 resolves somewhere else. Check `dig +short study.arnoklein.info @1.1.1.1`.
@@ -247,8 +364,17 @@ variable — `study_site.py` reads `PROLIFIC_CC_*` at import. Check
 `docker compose logs dash` for the `KeyError`.
 
 **Build killed during `pip install`.** Out of memory. Confirm swap is active
-with `free -h`.
+with `free -h`; see [Swap](#swap) in Part 1.
+
+**Changes deployed but the site looks unchanged.** The upload landed somewhere
+other than `~/studies/dash/`, or the rebuild ran in the wrong directory. Check
+the file's timestamp on the droplet with `ls -l ~/studies/dash/` and confirm
+`docker compose ps` shows the container created seconds ago, not hours.
 
 **`/api/verify-code` returns "not recognised" for a valid code.** The
 container was rebuilt without the volume mounted, so it is reading a fresh
 database. Confirm `docker compose config` still shows `dash_data:/data`.
+
+**Admin export returns 404 from your own laptop.** Your home IP changed.
+`curl ifconfig.me`, update the `remote_ip` line in `Caddyfile`, redeploy, and
+reload Caddy.
