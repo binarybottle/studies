@@ -8,6 +8,10 @@ For what the application *does* — the participant journey, Retell wiring,
 Prolific completion codes, and the privacy design for IRB review — see the
 main `README.md`. This document is only about getting it running.
 
+The live droplet is **167.71.248.46** (`ssh arno@167.71.248.46`). Part 1
+writes `DROPLET_IP` because it describes building a droplet that does not
+exist yet; Parts 2 and 3 use the real address.
+
 - [Part 1 — First-time setup](#part-1--first-time-setup): once per droplet.
 - [Part 2 — Rebuild and deploy](#part-2--rebuild-and-deploy): every code change.
 - [Part 3 — Operating](#part-3--operating): data export, backups, logs, troubleshooting.
@@ -194,7 +198,7 @@ Caddy and its certificates are never touched.
 From this directory on your laptop:
 
 ```bash
-DROPLET=arno@DROPLET_IP
+DROPLET=arno@167.71.248.46
 
 rsync -av --exclude '.env' --exclude '__pycache__' dash/ "$DROPLET":~/studies/dash/
 scp compose.yml Caddyfile backup.sh "$DROPLET":~/studies/
@@ -319,16 +323,48 @@ live database, so the CSV is current as of the moment you call it.
 From your laptop, on the allow-listed IP:
 
 ```bash
-TOKEN=$(ssh arno@DROPLET_IP 'grep ^ADMIN_TOKEN ~/studies/dash/.env | cut -d= -f2')
+TOKEN=$(ssh arno@167.71.248.46 \
+    'cd ~/studies && docker compose exec -T dash printenv ADMIN_TOKEN' \
+    | /usr/bin/tr -d ' \t\r\n')
 curl -s "https://study.arnoklein.info/admin/linkage.csv?token=$TOKEN" \
-    -o "linkage-$(date +%F).csv"
+    -o ~/Desktop/linkage-$(date +%F).csv
 ```
 
-A `404` means either a wrong token **or** an IP that is not allow-listed.
-The endpoint returns 404 rather than 403 deliberately, so a prober cannot
-confirm it exists — which also means it cannot tell you which of the two
-went wrong. Check `curl ifconfig.me` against the `remote_ip` line in
-`Caddyfile` first, since that is the one that changes on its own.
+`167.71.248.46` is the droplet; `dig +short study.arnoklein.info` confirms
+it if that ever changes. The CSV lands wherever `-o` points — an absolute
+path, because a relative one lands in whatever directory the terminal
+happens to be in, and this file should not end up inside the repository.
+
+Three details in that command are each load-bearing, and all three have
+already gone wrong once:
+
+- **The token is read from the container, not from `.env`.** Parsing the
+  file with `cut -d= -f2` also captures the inline comment after the value
+  (`# openssl rand -hex 24`), producing a 73-character string that makes
+  `curl` fail with exit 3 on a malformed URL. Compose strips those comments
+  when it loads the env file, so `printenv` inside the container returns
+  the exact 48-character string the server compares against.
+- **`/usr/bin/tr`, spelled absolutely.** A `tr` alias in your shell profile
+  silently turns this step into something else entirely.
+- **`ssh` must actually succeed.** If it fails, `TOKEN` is empty and the
+  export returns 404 — the same 404 as a wrong token, with no clue that the
+  real problem was ssh.
+
+Sanity-check the result rather than trusting it, since `curl -s` reports
+nothing on failure:
+
+```bash
+head -1 ~/Desktop/linkage-$(date +%F).csv
+```
+
+That should be the column header. If it is `{"detail":"Not found"}` the
+request was rejected, which means either a wrong or empty token **or** an
+IP that is not allow-listed. The endpoint returns 404 rather than 403
+deliberately, so a prober cannot confirm it exists — which also means it
+cannot tell you which of the two went wrong. Check `${#TOKEN}` is 48
+first, then `curl ifconfig.me` against the `remote_ip` line in `Caddyfile`.
+Note that a laptop reaching the site over IPv6 is matched by the `/64` in
+that line, not by the IPv4 address.
 
 Columns, from [`linkage_export`](dash/study_site.py):
 
@@ -429,7 +465,7 @@ Copy backups off the droplet periodically — DigitalOcean's droplet backups
 are weekly, which is coarser than a study needs:
 
 ```bash
-rsync -av arno@DROPLET_IP:~/studies/backups/ ./backups/
+rsync -av arno@167.71.248.46:~/studies/backups/ ./backups/
 ```
 
 ### Restoring
