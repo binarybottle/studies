@@ -113,12 +113,24 @@ CREATE INDEX IF NOT EXISTS idx_events_pid ON events(pid);
 
 
 class Stage(str, Enum):
-    """Ordered stages a participant passes through."""
+    """Ordered stages a participant passes through.
+
+    ``COMPLETE`` and ``TIMED_OUT`` are both terminal and both reached from
+    ``TEXTING``, but they mean opposite things. ``COMPLETE`` is written only
+    by ``/api/complete``, which the agent calls from the node before its End
+    node, so it means the participant reached the end of the interview.
+    ``TIMED_OUT`` is written by the ``chat_ended`` webhook when the chat
+    closed without that call: the participant texted STOP, or stopped
+    replying and the twenty-four hour silence timer expired. Keeping them
+    apart is what lets the linkage export distinguish a finished interview
+    from an abandoned one.
+    """
 
     ARRIVED = "arrived"
     CONSENTED = "consented"
     TEXTING = "texting"
     COMPLETE = "complete"
+    TIMED_OUT = "timed_out"
     WITHDREW = "withdrew"
 
 

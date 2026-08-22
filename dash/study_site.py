@@ -13,12 +13,13 @@ Participant journey
 5. Retell's Function node calls ``/api/verify-code``, binding the chat to
    the participant. This is the only point at which the linkage can be
    made, because inbound SMS chats carry no metadata set by us.
-6. Retell's ``chat_ended`` webhook hits ``/api/retell-webhook``, which
+6. A Function node before the End node calls ``/api/complete``, which
    marks the participant complete and releases their completion code.
 7. The polling page reveals the Prolific return link.
 
-Completion is keyed on ``chat_ended`` rather than ``chat_analyzed``,
-because chats closed by the inactivity timeout never fire the latter.
+Completion is written only by ``/api/complete``. The ``chat_ended``
+webhook marks anyone still at ``TEXTING`` as ``TIMED_OUT`` instead, which
+covers both STOP and silent abandonment; neither earns a completion code.
 
 Routes
 ------
@@ -154,6 +155,12 @@ def completion_code_for(participant: Participant) -> str | None:
     """
     if participant.stage is Stage.WITHDREW:
         return CC_NO_CONSENT
+    if participant.stage is Stage.TIMED_OUT:
+        # Deliberately no code. The consent copy tells participants that
+        # stopping ends the conversation and to email for payment covering
+        # the part they completed, so /finish sends them there rather than
+        # approving an interview that never finished.
+        return None
     if participant.stage is Stage.COMPLETE:
         if len(participant.checks_failed) >= ATTENTION_FAILURE_THRESHOLD:
             return CC_ATTENTION
@@ -402,6 +409,7 @@ async def start(
         Stage.CONSENTED: f"/begin?pid={PROLIFIC_PID}",
         Stage.TEXTING: f"/begin?pid={PROLIFIC_PID}",
         Stage.COMPLETE: f"/begin?pid={PROLIFIC_PID}",
+        Stage.TIMED_OUT: f"/finish?pid={PROLIFIC_PID}",
         Stage.WITHDREW: f"/finish?pid={PROLIFIC_PID}",
     }
     return RedirectResponse(destinations[participant.stage], status_code=303)
@@ -848,7 +856,13 @@ async def retell_webhook(request: Request) -> dict[str, bool]:
 
     store.log_event(event or "webhook", pid=participant.pid, chat_id=chat_id)
     if event == "chat_ended" and participant.stage is Stage.TEXTING:
-        store.set_stage(participant.pid, Stage.COMPLETE)
+        # Still TEXTING at chat_ended means /api/complete never ran, so the
+        # interview did not reach its final node. Record that rather than
+        # inferring completion: a participant who texts STOP, or who simply
+        # stops replying, also ends up here, and paying them the full
+        # completion code for an abandoned interview is both wrong and
+        # invisible in the data.
+        store.set_stage(participant.pid, Stage.TIMED_OUT)
     return {"ok": True}
 
 
