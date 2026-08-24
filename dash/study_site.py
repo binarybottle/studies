@@ -116,12 +116,18 @@ OPTIN_API_URL = os.environ.get(
 # defined once here and rendered into every page that collects consent: the
 # CMS page is generated from this constant rather than retyping it, because a
 # disclosure that differs between the page and the audit record is worthless.
+#
+# It links the SMS notice and SMS terms rather than the organization-wide
+# policy and terms. What a campaign review checks is the policy linked at the
+# point of opt-in, and the no-sharing clause it looks for lives in the SMS
+# notice; the organization-wide policy is a general document that does not
+# mention messaging at all.
 OPTIN_DISCLOSURE = (
     "I agree to receive SMS from Child Mind Institute for the DASH "
     "text-message interview pilot. Message and data rates may apply. "
     "Message frequency varies (approximately 100-200 messages per session). "
     "Reply STOP to cancel or HELP for help. "
-    "Privacy: https://childmind.org/privacy/ Terms: https://childmind.org/terms/"
+    f"Privacy: {SMS_PRIVACY_URL} Terms: {SMS_TERMS_URL}"
 )
 CONFIRMATION_SMS = (
     "Child Mind Institute: You are opted in for the DASH pilot. Msg & data "

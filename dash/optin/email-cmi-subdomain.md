@@ -1,44 +1,48 @@
 # Email to Child Mind Institute web / IT — subdomain request
 
-**Subject:** Request: a childmind.org subdomain for the DASH text-message pilot
+**Subject:** Request: a wildcard DNS record for participant-facing study sites
 
 Hi,
 
-I am running a pilot of an automated text-message interviewer for the DASH
-screener, and I need a Child Mind Institute hostname for it. Right now it runs
-on a personal domain, study.arnoklein.info, and that has become a blocker: our
-A2P messaging campaign — the carrier registration required before we can send
-any SMS at all — was rejected in part because the participant-facing site is
-not on an organization domain. Carrier reviewers open the URL directly and
-judge whether the messaging program belongs to the organization it claims to.
+I run participant-facing web applications for research studies, and I need them
+on a Child Mind Institute hostname rather than the personal domain they are on
+today (study.arnoklein.info). This has become blocking: our A2P messaging
+campaign — the carrier registration required before we can send any SMS at all
+— was rejected in part because the participant-facing site is not on an
+organization domain. Carrier reviewers open the URL directly and judge whether
+the messaging program belongs to the organization it claims to. It is also
+simply the right thing for participants to see.
 
 **What I am asking for**
 
-Either of these works, whichever is easier for you:
+A single wildcard DNS A record:
 
-1. **A DNS A record** for a subdomain such as `dash.childmind.org` or
-   `dash.matter.childmind.org`, pointing at `167.71.248.46`. That is a
-   DigitalOcean droplet I administer. It already terminates TLS with
-   automatically renewed Let's Encrypt certificates, so nothing needs to be
-   installed or maintained on your side beyond the record itself. If the
-   domain sits behind Cloudflare, the record needs to be DNS-only (grey cloud)
-   for the first certificate issuance.
+    *.studies.childmind.org.    A    167.71.248.46
 
-2. **A reverse proxy** from a path on an existing site, e.g.
-   `matter.childmind.org/studies/dash/`, to that same address, if you would
-   rather not delegate a subdomain.
+That is a DigitalOcean droplet I administer. One record covers every study,
+now and in future — the current one would be `dash.studies.childmind.org`, and
+later studies get their own names without anyone needing to email you again.
+
+TLS needs nothing from you: the server obtains and renews Let's Encrypt
+certificates per hostname automatically over HTTP validation, so a wildcard
+certificate is not required. If the zone is behind Cloudflare, the record
+should be DNS-only (grey cloud) so that validation can reach the server.
+
+If a wildcard is against policy, individual A records work equally well and I
+will send a request per study — starting with `dash.studies.childmind.org`.
+Either way it is a DNS record and nothing to install, host, or maintain on your
+side.
 
 **What runs there**
 
-A small participant-facing web application: a study information page, a consent
-form, and a page showing a one-time code that participants text to our study
-number. No personal data beyond a Prolific participant ID is stored, phone
-numbers are hashed on arrival and never kept in plaintext, and the site
-publishes the SMS terms and privacy notices already hosted on
-matter.childmind.org rather than duplicating them.
+A small participant-facing web application per study: an information page, a
+consent form, and a page showing a one-time code that participants text to our
+study number. No personal data beyond a Prolific participant ID is stored,
+phone numbers are hashed on arrival and never kept in plaintext, and the sites
+link to the SMS terms and privacy notices already hosted on
+matter.childmind.org rather than keeping their own copies.
 
-I maintain the server, the application, and its backups. The only thing I need
-from you is the DNS record or the proxy rule.
+I maintain the server, the applications, and their backups.
 
 **One related request, whether or not the subdomain happens**
 

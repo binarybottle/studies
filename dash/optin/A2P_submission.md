@@ -69,8 +69,9 @@ https://matter.childmind.org/studies/dash/opt-in/ and checking an optional,
 unchecked box that reads: "I agree to receive SMS from Child Mind Institute
 for the DASH text-message interview pilot. Message and data rates may apply.
 Message frequency varies (approximately 100-200 messages per session). Reply
-STOP to cancel or HELP for help. Privacy: https://childmind.org/privacy/
-Terms: https://childmind.org/terms/". Upon consent, the user receives a
+STOP to cancel or HELP for help. Privacy:
+https://matter.childmind.org/sms-privacy/ Terms:
+https://matter.childmind.org/sms-terms/". Upon consent, the user receives a
 confirmation SMS: "Child Mind Institute: You are opted in for the DASH pilot.
 Msg & data rates may apply. Msg freq varies. Reply STOP to cancel, HELP for
 help."
@@ -93,17 +94,25 @@ field describes.
 
 https://matter.childmind.org/sms-privacy/
 
-The reviewer's item 4 asks for an explicit SMS clause on
-**https://childmind.org/privacy/** — the organization-wide policy, not the SMS
-notice. `matter.childmind.org/sms-privacy/` already carries this language; the
-main policy does not, and the suggested field-5 wording cites the main policy
-as the privacy link. Send this sentence to whoever maintains it:
+The reviewer's item 4 asked for an explicit SMS clause on
+**https://childmind.org/privacy/**. Nothing there needs to change. The clause
+already exists on `matter.childmind.org/sms-privacy/`, and now leads with the
+phrasing a review looks for:
 
 No mobile information will be shared with third parties or affiliates for
 marketing or promotional purposes; text-messaging opt-in data and consent will
 not be shared with any third parties.
 
----
+What a campaign review checks is the privacy policy **linked at the point of
+opt-in**. The reviewer's suggested checkbox wording linked the
+organization-wide policy, which is a general document that does not mention
+messaging; the checkbox now links the SMS notice and SMS terms, which govern
+this program and carry the clause. That is the only reason item 4 came up, and
+it is why the disclosure quoted in field 5 differs from the reviewer's draft in
+its last two URLs.
+
+If TCR insists on the organization-wide policy specifically, the sentence above
+is ready to hand to whoever maintains childmind.org.
 
 ## 7. Terms and Conditions URL
 
@@ -181,14 +190,14 @@ would have contradicted field 5:
   said taking part is "entirely participant-initiated". Now points at the
   opt-in page for opting in, and keeps the number public.
 
-**Contact addresses still differ by page.** `sms-terms/` and `sms-privacy/`
-publish lindsay.alexander@childmind.org; every other page, including the new
-opt-in page and the pilot information page, publishes
-olivia.fitzpatrick@childmind.org. That follows the instruction to leave those
-two pages' contact alone. It is not a compliance problem — STOP and HELP are
-handled by the carrier, and both addresses are monitored — but the two pages
-have now been edited for the consent model anyway, so if you would rather have
-one address everywhere, this is the moment to say so.
+**Contact addresses differ by page, deliberately.** The policy pages —
+`sms-terms/` and `sms-privacy/` — publish lindsay.alexander@childmind.org, who
+handles legal questions about the messaging program. Every study-facing page —
+the opt-in page, the pilot information page, and the study site — publishes
+olivia.fitzpatrick@childmind.org, who manages this study and answers
+participants. Do not unify them: a policy question and a "my code did not
+arrive" question should not go to the same inbox. If a reviewer asks, that is
+the answer.
 
 **The participant flow is on the same host as the opt-in page.** A reviewer
 who clicks past the front page reaches the consent sheet, which shows the same
