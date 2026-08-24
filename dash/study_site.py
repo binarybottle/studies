@@ -63,6 +63,8 @@ from enum import Enum
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
@@ -71,8 +73,14 @@ from store import Participant, Stage
 
 STUDY_SMS_NUMBER = os.environ.get("STUDY_SMS_NUMBER", "+1 (507) 431-7807")
 ORG_NAME = os.environ.get("ORG_NAME", "Child Mind Institute")
-CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "arno.klein@childmind.org")
+CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "olivia.fitzpatrick@childmind.org")
 PRIVACY_URL = "https://childmind.org/privacy/"
+# The public opt-in page carriers review. It lives on the organization's
+# own domain, alongside the terms and privacy notices submitted with the
+# A2P campaign, because a reviewer trusts those more than a study host.
+OPTIN_URL = os.environ.get(
+    "OPTIN_URL", "https://matter.childmind.org/studies/dash/"
+)
 TERMS_URL = "https://childmind.org/terms/"
 
 # Expected duration drives the code lifetime and the wording on every page.
@@ -205,20 +213,23 @@ def page(title: str, body: str) -> HTMLResponse:
 <body><main>{body}</main></body></html>""")
 
 
-@app.get("/", response_class=HTMLResponse)
-async def public_information() -> HTMLResponse:
-    """Serve the public study information page.
+def public_information_body() -> str:
+    """Build the public study information markup.
 
-    This is the URL to submit as the A2P campaign opt-in URL. It must stay
-    reachable with no session, no query parameters, and no login, because
-    carrier reviewers open it directly.
+    Shared by ``/`` and by ``/consent`` when it is opened without a
+    participant ID, so that every URL a carrier reviewer might be given
+    resolves to the same disclosures without a query string.
+
+    The study number appears in the markup before any button, and the
+    opt-in is described as the participant texting us. A campaign review
+    reads a number revealed only after an agreement as "consent required
+    to receive the service", which is not permitted; here the agreement
+    records consent to take part and reveals nothing but a session code.
 
     Returns:
-        The information page.
+        The inner HTML of the information page.
     """
-    return page(
-        "Study information",
-        f"""
+    return f"""
         <h1>Text-message research pilot</h1>
         <p>{html.escape(ORG_NAME)} is a nonprofit children's mental health
         organization. This page describes a text-message conversation study
@@ -232,13 +243,22 @@ async def public_information() -> HTMLResponse:
         mental health screening questionnaire in character. No participant is
         asked about their own child or their own mental health.</p>
 
-        <h2>How it works</h2>
-        <p>After reading the study information and agreeing to take part, a
-        participant is shown the study number
-        <strong>{html.escape(STUDY_SMS_NUMBER)}</strong> together with a
-        one-time code, and texts that code from their own phone to begin.
-        Every conversation is started by the participant. We never message a
-        number that has not messaged us first.</p>
+        <h2>The study number, and how to opt in</h2>
+        <div class="card">
+          <p class="muted">Messages in this program come from</p>
+          <div class="number">{html.escape(STUDY_SMS_NUMBER)}</div>
+          <p><strong>You opt in by texting that number first.</strong> We
+          never send a message to a phone number that has not messaged us.
+          There is no list to join, no number to submit, and nothing to
+          agree to before the number is shown: it is published here, and
+          the first message is always yours.</p>
+        </div>
+        <p>Participants recruited through Prolific are also given a
+        five-character code to send as that first message. The code is how a
+        conversation is matched to a Prolific submission so the participant
+        can be paid. It identifies a session; it is not what permits us to
+        message anyone, and messaging begins only once the participant has
+        texted us.</p>
 
         <h2>Messaging terms</h2>
         <ul>
@@ -252,13 +272,30 @@ async def public_information() -> HTMLResponse:
           <li>Carriers are not liable for delayed or undelivered messages.</li>
         </ul>
 
+        <p class="muted">Taking part through Prolific? Open the study from
+        your Prolific dashboard to continue; the link there carries the
+        identifier that resumes your session.</p>
+
         <p class="muted">Questions: {html.escape(CONTACT_EMAIL)} &middot;
         <a href="/sms-privacy">SMS privacy notice</a> &middot;
         <a href="/sms-terms">SMS terms and conditions</a> &middot;
         <a href="{PRIVACY_URL}">Organization privacy policy</a> &middot;
         <a href="{TERMS_URL}">Organization terms of use</a></p>
-        """,
-    )
+        """
+
+
+@app.get("/", response_class=HTMLResponse)
+async def public_information() -> HTMLResponse:
+    """Serve the public study information page.
+
+    This is the URL to submit as the A2P campaign opt-in URL. It must stay
+    reachable with no session, no query parameters, and no login, because
+    carrier reviewers open it directly.
+
+    Returns:
+        The information page.
+    """
+    return page("Study information", public_information_body())
 
 
 @app.get("/sms-privacy", response_class=HTMLResponse)
@@ -278,7 +315,7 @@ async def sms_privacy() -> HTMLResponse:
         f"""
         <h1>SMS privacy notice</h1>
         <p>This notice covers phone numbers and message content for
-        text-message research studies operated by
+        text-message pilot testing and research operated by
         {html.escape(ORG_NAME)}, a nonprofit children's mental health
         organization. It supplements our
         <a href="{PRIVACY_URL}">organization-wide privacy policy</a>.</p>
@@ -332,24 +369,37 @@ async def sms_terms() -> HTMLResponse:
         f"""
         <h1>SMS terms and conditions</h1>
         <p>These terms govern text messages sent and received in connection
-        with research studies operated by {html.escape(ORG_NAME)}. They
-        supplement our <a href="{TERMS_URL}">organization-wide terms of
-        use</a>.</p>
+        with text-message pilot testing and research operated by
+        {html.escape(ORG_NAME)}. They supplement our
+        <a href="{TERMS_URL}">organization-wide terms of use</a>.</p>
 
         <h2>Program description</h2>
-        <p>An automated interviewer conducts a research questionnaire by text
-        message. Messages consist of questionnaire items and replies to what
-        you send. No marketing or promotional messages are ever sent from
+        <p>An automated interviewer conducts a standardized questionnaire by
+        text message. Messages consist of questionnaire items and replies to
+        what you send. No marketing or promotional messages are ever sent from
         this number.</p>
+        <p>The current program is a pilot test of that messaging system, run
+        in preparation for a research study that has not yet begun and for
+        which {html.escape(ORG_NAME)} will apply for Institutional Review
+        Board review.</p>
+        <p>Each participant is given a short written persona describing a
+        fictional parent and child, and answers the questionnaire in
+        character. No participant is asked about their own child or their own
+        mental health.</p>
 
         <h2>How you opt in</h2>
-        <p>Participants are recruited through the Prolific research platform.
-        A participant who agrees to take part is shown the study number
-        <strong>{html.escape(STUDY_SMS_NUMBER)}</strong> and a one-time code,
-        and sends a text message to that number to begin. Sending that message
-        is the opt-in. Every conversation is started by the participant. We
-        never message a number that has not messaged us first, and we do not
-        buy, rent, or import phone number lists.</p>
+        <p>The number <strong>{html.escape(STUDY_SMS_NUMBER)}</strong> is
+        published publicly on our
+        <a href="{OPTIN_URL}">pilot information page</a>. Anyone can see it
+        without agreeing to anything first. You opt in by sending a text
+        message to that number yourself, and that message is the opt-in.
+        Every conversation is started by the participant. We never message a
+        number that has not messaged us first, and we do not buy, rent, or
+        import phone number lists.</p>
+        <p>Participants are recruited through the Prolific research platform
+        and are given a one-time code to text, which links the conversation to
+        their submission. The code identifies the session; it is not a
+        condition of seeing the number or of contacting us.</p>
 
         <h2>Message frequency</h2>
         <p>Expected length is {html.escape(DURATION_TEXT)}, typically 100 to
@@ -520,6 +570,32 @@ async def unknown_participant_handler(
     return response
 
 
+@app.exception_handler(RequestValidationError)
+async def validation_handler(
+    request: Request, exc: RequestValidationError
+) -> Response:
+    """Explain a malformed participant URL instead of dumping the error.
+
+    A participant route can fail validation for exactly one reason: the
+    ``pid`` query parameter is absent, which means the link lost its query
+    string. The framework's default body is raw JSON, which a participant
+    can neither read nor act on.
+
+    Args:
+        request: The request that failed validation.
+        exc: The raised validation error.
+
+    Returns:
+        The missing-identifier page, or the default JSON body for the
+        polling and integration endpoints.
+    """
+    if request.url.path.startswith(MACHINE_PATH_PREFIXES):
+        return JSONResponse(
+            {"detail": jsonable_encoder(exc.errors())}, status_code=422
+        )
+    return missing_identifier_page()
+
+
 def require(pid: str) -> Participant:
     """Fetch a participant record or fail.
 
@@ -540,19 +616,28 @@ def require(pid: str) -> Participant:
 
 
 @app.get("/consent", response_class=HTMLResponse)
-async def consent_form(pid: str) -> HTMLResponse:
+async def consent_form(pid: str | None = None) -> HTMLResponse:
     """Present the consent information sheet.
 
     Replace the body text with the IRB-approved wording verbatim; the
     structure below is a placeholder that covers the elements carriers and
     review boards both expect to see.
 
+    Without a ``pid`` the request is not a participant's: a carrier
+    reviewer opening the URL from a campaign application, or a link copied
+    without its query string. Those get the public information page rather
+    than a validation error, so every URL the campaign lists resolves to
+    the disclosures with no query parameters required.
+
     Args:
-        pid: Prolific participant ID.
+        pid: Prolific participant ID, absent for a public visitor.
 
     Returns:
-        The consent page.
+        The consent page, or the public information page.
     """
+    if not pid:
+        return page("Study information", public_information_body())
+
     require(pid)
     safe_pid = html.escape(pid)
     return page(
@@ -604,8 +689,21 @@ async def consent_form(pid: str) -> HTMLResponse:
         describe a fictional character, the conversation contains no real
         information about any real child.</p>
 
+        <h2>The study number</h2>
+        <div class="card">
+          <p class="muted">You will text</p>
+          <div class="number">{html.escape(STUDY_SMS_NUMBER)}</div>
+          <p>You start the conversation by texting this number from your own
+          phone. We never text a number that has not texted us first, so
+          nothing is sent to you unless and until you message us. Agreeing
+          below records your consent to take part; it does not send you any
+          messages.</p>
+        </div>
+
         <h2>Messaging terms</h2>
-        <p>Message and data rates may apply. Reply STOP to opt out, HELP for
+        <p>Message and data rates may apply, and this study is unusually
+        message-heavy: expect roughly 100 to 200 messages in one session.
+        Reply STOP to opt out, HELP for
         help. Your number will never be used for marketing and will not be
         sold or shared. See the
         <a href="{PRIVACY_URL}">privacy policy</a> and
@@ -624,6 +722,12 @@ async def consent_form(pid: str) -> HTMLResponse:
         <h2>Questions</h2>
         <p>Contact {html.escape(CONTACT_EMAIL)} with your Prolific ID if
         anything goes wrong or you want to know more.</p>
+
+        <h2>Your decision</h2>
+        <p>Agreeing takes you to a page showing the number again with your
+        one-time code. Declining returns you to Prolific straight away, with
+        a code that pays you for the time you spent reading this. Either way
+        you are never sent a text message you did not ask for.</p>
 
         <form method="post" action="/consent?pid={safe_pid}">
           <button type="submit" name="decision" value="consent">

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<!--
+  A2P opt-in page for the DASH text-message interviewer pilot.
+
+  Publish at https://matter.childmind.org/studies/dash/ and cite that URL in
+  the campaign application. It must stay reachable with no query string, no
+  login, and no redirect, because a carrier reviewer opens it directly and
+  judges the campaign on what is visible without interacting with anything.
+
+  Four things a reviewer checks for are marked in the markup below: the
+  program name, the number itself, the opt-in disclosure with STOP/HELP and
+  the rates language, and links to the terms and privacy pages. The number
+  appears above any other content: a number revealed only after an agreement
+  reads as "consent required to receive the service" and fails review.
+
+  Self-contained on purpose. If the CMS only accepts body content, paste
+  everything between <body> and </body>; the <style> block travels with it.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DASH Text-Message Interviewer Pilot — Child Mind Institute MATTER Lab</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+         max-width: 42rem; margin: 0 auto; padding: 2rem 1.25rem 4rem;
+         line-height: 1.65; }
+  h1 { font-size: 1.6rem; line-height: 1.3; margin-bottom: 0.25rem; }
+  h2 { font-size: 1.15rem; margin-top: 2.25rem; }
+  .org { opacity: 0.75; margin-top: 0; }
+  .card { border: 1px solid currentColor; border-radius: 0.75rem;
+          padding: 1.25rem 1.5rem; margin: 1.5rem 0; }
+  .number { font-size: 1.75rem; font-weight: 600; text-align: center;
+            padding: 0.25rem 0 0.75rem; }
+  .label { text-align: center; opacity: 0.7; font-size: 0.9rem; margin: 0; }
+  .muted { opacity: 0.75; font-size: 0.92rem; }
+  ul { padding-left: 1.2rem; }
+  li { margin-bottom: 0.4rem; }
+</style>
+</head>
+<body>
+
+<!-- Reviewer checkpoint 1: program name and brand -->
+<h1>DASH Text-Message Interviewer Pilot</h1>
+<p class="org">A messaging program of the Child Mind Institute MATTER Lab.
+The Child Mind Institute is a nonprofit children's mental health
+organization.</p>
+
+<!-- Reviewer checkpoint 2: the number, before anything else on the page -->
+<div class="card">
+  <p class="label">Messages in this program are sent from and received at</p>
+  <div class="number">+1 (507) 431-7807</div>
+  <p class="label">You join by texting this number. We never message a phone
+  number that has not messaged us first.</p>
+</div>
+
+<h2>How to opt in</h2>
+<p><strong>Participants opt in by texting +1 (507) 431-7807 to begin.</strong>
+The first message in every conversation is sent by the participant. There is
+no list to join, no phone number to submit anywhere on this page, and nothing
+to agree to before the number is shown — it is published above.</p>
+
+<!-- Reviewer checkpoint 3: the disclosure, verbatim STOP/HELP + rates -->
+<div class="card">
+  <p>By texting <strong>+1 (507) 431-7807</strong>, you agree to receive text
+  messages from the Child Mind Institute relating to the DASH interviewer
+  pilot. <strong>Message frequency varies</strong>; one session runs
+  30 to 60 minutes as a continuous conversation of approximately 100 to 200
+  messages.
+  <strong>Message and data rates may apply.</strong> Reply <strong>STOP</strong>
+  at any time to cancel. Reply <strong>HELP</strong> for help, or email
+  <a href="mailto:olivia.fitzpatrick@childmind.org">olivia.fitzpatrick@childmind.org</a>.
+  Carriers are not liable for delayed or undelivered messages.</p>
+</div>
+
+<h2>What the program is</h2>
+<p>The Child Mind Institute is testing an automated text-message interviewer.
+This is a pilot test of the software, not a research study: its purpose is to
+find out whether the system works reliably before any research data is
+collected.</p>
+<p>Testers are recruited through the Prolific research platform. Each tester
+is given a short written persona describing a fictional parent and a fictional
+child, and answers a standardized mental health screening questionnaire
+<strong>in character as that fictional parent</strong>. No tester is asked
+about their own child, their own family, or their own mental health.</p>
+
+<h2>What messages look like</h2>
+<p class="muted">Hello! I am an AI assistant from the Child Mind Institute,
+messaging you to ask some questions about the child described in the persona
+you were given, as part of the DASH Mental Health Screener. The first few
+questions ask about the child's physical health.</p>
+
+<h2>Opting out, and getting help</h2>
+<ul>
+  <li><strong>Reply STOP</strong> to any message to end the conversation and
+      stop all messages immediately.</li>
+  <li><strong>Reply HELP</strong> for contact information and help.</li>
+  <li>Email <a href="mailto:olivia.fitzpatrick@childmind.org">olivia.fitzpatrick@childmind.org</a>
+      with any question, including a request to delete your records.</li>
+</ul>
+
+<h2>Your phone number</h2>
+<p>Phone numbers are used only to conduct the conversation. <strong>We do not
+sell, rent, trade, or share mobile phone numbers or SMS opt-in data with third
+parties</strong>, and they are never used for marketing. A number reaches us
+as an unavoidable part of receiving a text message; it is converted to an
+irreversible cryptographic hash on arrival and the number itself is never
+written to our database.</p>
+
+<!-- Reviewer checkpoint 4: links to the already-approved policy pages -->
+<p class="muted">
+  <a href="https://matter.childmind.org/sms-terms/">SMS terms and conditions</a>
+  &middot;
+  <a href="https://matter.childmind.org/sms-privacy/">SMS privacy notice</a>
+  &middot;
+  <a href="https://childmind.org/privacy/">Organization privacy policy</a>
+  &middot;
+  <a href="https://childmind.org/terms/">Organization terms of use</a>
+  &middot;
+  Contact: <a href="mailto:olivia.fitzpatrick@childmind.org">olivia.fitzpatrick@childmind.org</a>
+</p>
+
+</body>
+</html>
