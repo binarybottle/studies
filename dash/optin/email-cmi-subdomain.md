@@ -40,6 +40,25 @@ matter.childmind.org rather than duplicating them.
 I maintain the server, the application, and its backups. The only thing I need
 from you is the DNS record or the proxy rule.
 
+**One related request, whether or not the subdomain happens**
+
+matter.childmind.org is behind a Cloudflare managed challenge that returns 403
+to any request that is not a full browser, including the site root. We have
+just published the messaging opt-in page there, at
+matter.childmind.org/studies/dash/opt-in/, and that page is cited in the
+carrier registration. If the reviewer or their automated checker fetches it
+with anything other than a browser they will get a challenge page instead of
+the required disclosures, which is indistinguishable from the page being
+broken — and a page that does not load is one of the things we were already
+rejected for.
+
+Could you exempt `/studies/dash/*` from the bot challenge, or allowlist the
+checker if you would rather scope it tightly? It should be verifiable with:
+
+    curl -s -o /dev/null -w '%{http_code}\n' https://matter.childmind.org/studies/dash/opt-in/
+
+returning 200 rather than 403.
+
 **Timing**
 
 We cannot send a single message until the campaign is approved, and the

@@ -138,18 +138,33 @@ from the study site's constants — regenerate with
 rather than editing it there, so the disclosure on the page and the disclosure
 recorded with each consent cannot drift apart.
 
-**2. Get the outbound send endpoint from Retell** and set `SMS_SEND_URL` and
+**2. Get the opt-in URL exempted from Cloudflare's bot challenge.**
+matter.childmind.org sits behind a Cloudflare managed challenge that returns
+403 to every request that is not a real browser — the site root included. A
+reviewer or automated checker fetching the opt-in URL gets a challenge page
+rather than the disclosures, which looks exactly like "the URL does not load":
+the complaint that started this. Ask whoever administers the Cloudflare zone to
+exempt `/studies/dash/*`, then confirm from outside a browser:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' \
+  https://matter.childmind.org/studies/dash/opt-in/
+```
+
+Expect 200. A 403 means the reviewer will see one too.
+
+**3. Get the outbound send endpoint from Retell** and set `SMS_SEND_URL` and
 `SMS_SEND_TOKEN` in `dash/.env`. Nothing else about the confirmation message
 needs building; the endpoint is written and tested against both a missing
 provider and an unreachable one.
 
-**3. Redeploy:**
+**4. Redeploy the study site:**
 
 ```bash
 docker compose up -d --build dash
 ```
 
-**4. Test the whole path yourself** — open the published page, enter your own
+**5. Test the whole path yourself** — open the published page, enter your own
 mobile number, tick the box, and confirm the text arrives.
 
 **The website is already updated** in the `matter-website` repository and
