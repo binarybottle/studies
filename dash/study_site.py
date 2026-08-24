@@ -63,7 +63,7 @@ from enum import Enum
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
 import store
@@ -384,9 +384,45 @@ async def sms_terms() -> HTMLResponse:
     )
 
 
+def missing_identifier_page() -> HTMLResponse:
+    """Explain that a study link arrived without its Prolific identifiers.
+
+    Returned instead of the framework's validation error, which renders as
+    raw JSON and leaves the participant with nothing to act on. The status
+    is 400 so the condition is still visible in the access log.
+
+    Returns:
+        The explanatory page, with a 400 status.
+    """
+    response = page(
+        "Study link incomplete",
+        f"""
+        <h1>This link is missing your Prolific ID</h1>
+        <p>The study opened without the identifier Prolific normally adds to
+        the link, so we cannot tell which submission you are.</p>
+
+        <h2>What to do</h2>
+        <p>Go back to Prolific and open the study from your list of active
+        studies, using the <strong>Open study in new window</strong> button
+        rather than a bookmark or a copied link. That button adds the
+        identifier automatically.</p>
+
+        <p class="muted">Nothing has been recorded, and your submission is
+        unaffected. If the study still does not open, message us through
+        Prolific or write to
+        <a href="mailto:{html.escape(CONTACT_EMAIL)}">{html.escape(CONTACT_EMAIL)}</a>
+        so we can look into it.</p>
+        """,
+    )
+    response.status_code = 400
+    return response
+
+
 @app.get("/start")
 async def start(
-    PROLIFIC_PID: str, STUDY_ID: str | None = None, SESSION_ID: str | None = None
+    PROLIFIC_PID: str | None = None,
+    STUDY_ID: str | None = None,
+    SESSION_ID: str | None = None,
 ):
     """Entry point registered as the Prolific external study URL.
 
@@ -394,14 +430,25 @@ async def start(
     resetting it, so refreshing cannot replay the study or mint a
     second code.
 
+    Prolific substitutes the identifiers into the URL itself, so a request
+    without ``PROLIFIC_PID`` means the participant arrived some other way:
+    a bookmark, a link shared between participants, or a study URL saved
+    before the query parameters were configured. They are shown an
+    explanation rather than a validation error.
+
     Args:
         PROLIFIC_PID: Participant ID substituted by Prolific.
         STUDY_ID: Study ID substituted by Prolific.
         SESSION_ID: Session ID substituted by Prolific.
 
     Returns:
-        A redirect to the appropriate stage.
+        A redirect to the appropriate stage, or the missing-identifier page
+        when Prolific's identifiers are absent.
     """
+    if not PROLIFIC_PID:
+        store.log_event("start_without_pid")
+        return missing_identifier_page()
+
     participant = store.create_participant(PROLIFIC_PID, STUDY_ID, SESSION_ID)
 
     destinations = {
@@ -415,6 +462,64 @@ async def start(
     return RedirectResponse(destinations[participant.stage], status_code=303)
 
 
+class UnknownParticipant(HTTPException):
+    """Raised when a ``pid`` matches no stored participant.
+
+    A distinct class so one handler can answer it two ways: participants
+    browsing ``/consent``, ``/begin``, or ``/finish`` get an explanation
+    they can act on, while ``/status`` and the Retell endpoints keep the
+    JSON body their callers already parse.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(status_code=404, detail="Unknown participant")
+
+
+# Paths whose callers are code rather than people: the /begin poller, the
+# Retell function nodes, and the linkage export.
+MACHINE_PATH_PREFIXES = ("/status", "/api/", "/admin/")
+
+
+@app.exception_handler(UnknownParticipant)
+async def unknown_participant_handler(
+    request: Request, exc: UnknownParticipant
+) -> Response:
+    """Answer an unrecognised ``pid`` in the form its caller expects.
+
+    Args:
+        request: The request that raised, used to tell people from code.
+        exc: The raised exception.
+
+    Returns:
+        The stale-link page for participants, or the original JSON body
+        for the polling and integration endpoints.
+    """
+    if request.url.path.startswith(MACHINE_PATH_PREFIXES):
+        return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+
+    response = page(
+        "Study link expired",
+        f"""
+        <h1>This link is no longer valid</h1>
+        <p>The link you opened refers to a study session we have no record
+        of. That usually means it was copied from somewhere else, or it is
+        left over from an earlier session that has since closed.</p>
+
+        <h2>What to do</h2>
+        <p>Go back to Prolific and open the study from your list of active
+        studies. That will put you back at the right place.</p>
+
+        <p class="muted">If you had already texted us and were part-way
+        through the interview, do not start over. Email
+        <a href="mailto:{html.escape(CONTACT_EMAIL)}">{html.escape(CONTACT_EMAIL)}</a>
+        with your Prolific ID and we will arrange payment for the part you
+        completed.</p>
+        """,
+    )
+    response.status_code = exc.status_code
+    return response
+
+
 def require(pid: str) -> Participant:
     """Fetch a participant record or fail.
 
@@ -425,12 +530,12 @@ def require(pid: str) -> Participant:
         The stored record.
 
     Raises:
-        HTTPException: 404 when the participant never passed through
+        UnknownParticipant: 404 when the participant never passed through
             ``/start``, indicating a hand-built or stale URL.
     """
     participant = store.get_participant(pid)
     if participant is None:
-        raise HTTPException(status_code=404, detail="Unknown participant")
+        raise UnknownParticipant()
     return participant
 
 

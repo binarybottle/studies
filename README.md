@@ -182,6 +182,20 @@ https://study.arnoklein.info/start?PROLIFIC_PID=test123456789012345678
 Information sheet → consent → a five-character code and the study phone
 number.
 
+In Prolific, the study URL is `/start` with no query string:
+
+```
+https://study.arnoklein.info/start
+```
+
+Prolific appends `?PROLIFIC_PID=…&STUDY_ID=…&SESSION_ID=…` itself. Do not
+paste a URL with a `pid` already in it, and do not point Prolific at
+`/consent`: `/start` is the only route that registers a participant, and it
+is what decides whether a returning participant resumes at consent, at the
+code, or at their completion link. A participant who reaches `/start`
+without Prolific's identifiers — a bookmark, or a link passed between
+participants — gets a page telling them to reopen the study from Prolific.
+
 ## 7. Install backups
 
 See [Backups](#backups) in Part 3. Do this before the study opens, not after.
