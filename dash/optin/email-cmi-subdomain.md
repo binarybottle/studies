@@ -11,25 +11,36 @@ Hi,
 That is the only thing I need. Everything below is why, and what to do if a
 wildcard is against policy.
 
-**Why it is blocking**
+**What it is for**
 
-Mike, Laura, Lauren, Olivia and I are running a pilot of an automated
-text-message interviewer for the DASH screener. Before we can send a single
-SMS we need an A2P campaign approved — the carrier registration that every
-organization sending text messages has to pass. Ours was rejected, in part
-because the participant-facing site is on a personal domain,
-study.arnoklein.info. Carrier reviewers open the URL directly and judge
-whether the messaging program plausibly belongs to the organization it claims
-to. On a personal domain it does not, and no amount of correct wording on the
-page fixes that.
+Our studies recruit participants online, and each one needs a small
+participant-facing website: an information page, a consent form, and whatever
+the study itself requires. Today those run on a personal domain,
+study.arnoklein.info, because there has never been a Child Mind Institute
+hostname for them. That was always wrong for participants to see, and it has
+now become blocking.
+
+Mike, Laura, Lauren, Olivia and I are running the first of these, a pilot of an
+automated text-message interviewer for the DASH screener. Before we can send a
+single SMS we need an A2P campaign approved — the carrier registration that
+every organization sending text messages has to pass. Ours was rejected, in
+part because the participant-facing site is not on an organization domain.
+Carrier reviewers open the URL directly and judge whether the messaging program
+plausibly belongs to the organization it claims to. On a personal domain it
+does not, and no amount of correct wording on the page fixes that.
+
+The record below is not for that one study. It is the piece of infrastructure
+every study after it will use too.
 
 **Why a wildcard rather than a single name**
 
-This is not a one-off. Each study we run needs its own participant-facing
-hostname, and each one otherwise means another request to you. One wildcard
-record means you are asked once: I create `dash.studies.childmind.org` now,
-and future studies get their own names under `studies.childmind.org` without
-anyone opening another ticket.
+Each study needs its own hostname, and each one otherwise means another
+request to you. One wildcard record means you are asked once: I create
+`dash.studies.childmind.org` for the study that is currently blocked, and
+every study after it gets its own name under `studies.childmind.org` without
+anyone opening another ticket. Separate hostnames also keep studies isolated
+from one another, which matters when they have different participants,
+different consent, and different review-board status.
 
 If wildcards are against policy, in order of preference:
 
@@ -64,10 +75,12 @@ is the opposite of what the campaign needs.
 
 **What runs there**
 
-A small participant-facing web application per study: a study information page,
-a consent form, and a page showing a one-time code that participants text to
-our study number. Phone numbers are hashed on arrival and never kept in
-plaintext. The sites link to the SMS terms and privacy notices already hosted
+A small participant-facing web application per study, each in its own
+container with its own database and its own hostname. For the DASH pilot that
+is a study information page, a consent form, and a page showing a one-time code
+that participants text to our study number; phone numbers are hashed on arrival
+and never kept in plaintext. Later studies will differ in detail, but not in
+shape or in what they store. The sites link to the SMS terms and privacy notices already hosted
 on matter.childmind.org rather than keeping their own copies. I maintain the
 server, the applications, and their backups.
 
@@ -83,8 +96,10 @@ page instead of the required disclosures — indistinguishable from the page
 being broken, and "the page does not load" is already one of the things we were
 rejected for.
 
-Could you exempt `/studies/dash/*` from the bot challenge, or allowlist the
-checker if you would rather scope it tightly? Verifiable with:
+Could you exempt `/studies/*` from the bot challenge? Scoping it to that
+prefix covers this page and the equivalent page for every study after it,
+rather than us asking again each time. `/studies/dash/*` alone would do for
+now if you would rather scope it tightly. Verifiable with:
 
     curl -s -o /dev/null -w '%{http_code}\n' https://matter.childmind.org/studies/dash/opt-in/
 
