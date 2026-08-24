@@ -3,3 +3,5 @@
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 python-multipart==0.0.20
+# Outbound HTTP for the opt-in confirmation message.
+httpx==0.28.1

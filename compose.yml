@@ -40,10 +40,13 @@ services:
     expose:
       - "8000"
     healthcheck:
-      # /sms-terms is public, static, and touches no participant state, so it
-      # is a safe liveness probe.
+      # The public information page is served from this container, needs no
+      # session, and touches no participant state, so it is a safe liveness
+      # probe. Do not probe /sms-terms or /sms-privacy: those now redirect to
+      # matter.childmind.org, and urlopen follows redirects, which would make
+      # this container's health depend on an external site being reachable.
       test: ["CMD", "python", "-c",
-             "import urllib.request; urllib.request.urlopen('http://localhost:8000/sms-terms')"]
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
       interval: 30s
       timeout: 5s
       retries: 3

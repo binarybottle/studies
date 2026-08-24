@@ -41,4 +41,12 @@ EXPOSE 8000
 
 # One worker: SQLite with a single writer is the intended deployment shape.
 # Scaling past this means moving store.py to Postgres first.
-CMD ["uvicorn", "study_site:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+#
+# --proxy-headers makes uvicorn read the client address from the
+# X-Forwarded-For header Caddy sets, instead of reporting Caddy's own
+# container address for every request. Without it the per-address rate limit
+# on /api/opt-in sees one caller for the whole study and starts refusing real
+# participants. Trusting the header from any peer is safe here only because
+# the container publishes no port: Caddy is the sole route in.
+CMD ["uvicorn", "study_site:app", "--host", "0.0.0.0", "--port", "8000", \
+     "--workers", "1", "--proxy-headers", "--forwarded-allow-ips", "*"]

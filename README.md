@@ -31,7 +31,23 @@ studies/
         env.example      Template — copy to .env on the droplet
         study_site.py    The application
         store.py         SQLite persistence
+        optin/           A2P campaign paperwork; not deployed
+            A2P_submission.md      Campaign application field text
+            build_optin_page.py    Generates opt-in.html from the app's constants
+            opt-in.html            Generated; paste into the CMS
+            email-retell.md        Outbound send endpoint, consent-model question
+            email-cmi-subdomain.md Subdomain request
 ```
+
+Everything a study needs lives in that study's directory, including material
+that is never deployed with it. `optin/` holds the A2P campaign application
+text: paperwork rather than code, but it quotes this study's number and
+disclosures, so it belongs beside them and travels with the directory when a
+study is copied.
+
+The opt-in page the campaign cites is not a file in there. It is the site's own
+front page, rendered by `study_site.py`, so the page a carrier reviews and the
+page a participant reads cannot drift apart.
 
 This laptop directory is the source of truth for everything except `.env`,
 which exists only on the droplet and is never committed. Deployment is
@@ -126,12 +142,13 @@ From this directory on your laptop:
 ```bash
 ssh arno@DROPLET_IP 'mkdir -p ~/studies/dash'
 scp compose.yml Caddyfile backup.sh arno@DROPLET_IP:~/studies/
-scp dash/* arno@DROPLET_IP:~/studies/dash/
+scp dash/Dockerfile dash/requirements.txt dash/*.py arno@DROPLET_IP:~/studies/dash/
 ```
 
-`scp dash/*` is safe **only here**, before `.env` exists on the droplet. For
-every later upload use the deploy command in
-[Part 2](#part-2--rebuild-and-deploy), which excludes `.env`.
+Naming the files rather than globbing `dash/*` keeps `optin/` on the laptop,
+where it belongs — it is campaign paperwork, not application code — and avoids
+`scp` complaining about a directory. For every later upload use the deploy
+command in [Part 2](#part-2--rebuild-and-deploy), which excludes `.env`.
 
 ## 5. Configure
 
@@ -214,7 +231,8 @@ From this directory on your laptop:
 ```bash
 DROPLET=arno@167.71.248.46
 
-rsync -av --exclude '.env' --exclude '__pycache__' dash/ "$DROPLET":~/studies/dash/
+rsync -av --exclude '.env' --exclude '__pycache__' --exclude 'optin' \
+    dash/ "$DROPLET":~/studies/dash/
 scp compose.yml Caddyfile backup.sh "$DROPLET":~/studies/
 ssh "$DROPLET" 'cd ~/studies && docker compose up -d --build dash'
 ```
@@ -497,7 +515,10 @@ before typing it.
 
 ## Adding a second study
 
-1. Copy `dash/` to a new directory, e.g. `screener2/`.
+1. Copy `dash/` to a new directory, e.g. `screener2/`. The copy brings
+   `optin/` with it, which is the point: the new study's opt-in page and
+   campaign text start from wording that already passed review, and are
+   edited rather than written.
 2. Add a service block in `compose.yml` pointing at it, with its own volume.
 3. Add a site block in `Caddyfile` for the new hostname.
 4. Add the DNS A record.

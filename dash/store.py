@@ -5,7 +5,7 @@ conversation. That table is the only key tying an anonymous transcript back
 to a participant, so it is deliberately kept here — inside infrastructure the
 research team controls — rather than written into the transcript itself.
 
-Four tables:
+Five tables:
 
 ``participants``
     One row per Prolific submission: stage, issued code, chat id, and the
@@ -17,6 +17,12 @@ Four tables:
 ``attention_checks``
     One row per check per participant, keyed so a retried webhook or a
     duplicated function call cannot inflate the failure count.
+``sms_optins``
+    One row per express written consent to receive text messages: the
+    hashed number, the exact disclosure text agreed to, and whether the
+    confirmation message was sent. This is the record a carrier or TCR
+    audit asks for, and the reason the disclosure wording is stored
+    verbatim rather than referenced — the page it came from can change.
 ``events``
     Append-only audit trail. Useful for reconstructing what happened to a
     participant who reports a problem, and for demonstrating to a review
@@ -98,6 +104,16 @@ CREATE TABLE IF NOT EXISTS attention_checks (
     PRIMARY KEY (pid, check_id)
 );
 
+CREATE TABLE IF NOT EXISTS sms_optins (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    phone_hash   TEXT NOT NULL,
+    pid          TEXT,
+    ip_hash      TEXT,
+    disclosure   TEXT NOT NULL,
+    confirmation TEXT NOT NULL,
+    created_at   REAL NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS events (
     id       INTEGER PRIMARY KEY AUTOINCREMENT,
     pid      TEXT,
@@ -108,6 +124,8 @@ CREATE TABLE IF NOT EXISTS events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_participants_chat ON participants(chat_id);
+CREATE INDEX IF NOT EXISTS idx_optins_phone ON sms_optins(phone_hash, created_at);
+CREATE INDEX IF NOT EXISTS idx_optins_ip ON sms_optins(ip_hash, created_at);
 CREATE INDEX IF NOT EXISTS idx_events_pid ON events(pid);
 """
 
@@ -500,6 +518,89 @@ def set_phone_hash(pid: str, number: str) -> None:
             (hash_phone(number), pid),
         )
         connection().commit()
+
+
+def record_optin(
+    number: str,
+    disclosure: str,
+    confirmation: str,
+    pid: str | None = None,
+    ip: str | None = None,
+) -> int:
+    """Record one express written consent to receive text messages.
+
+    The number is hashed before it is written, exactly as an inbound number
+    is. What proves consent is the pairing of that hash with the disclosure
+    text the person agreed to, so the disclosure is stored verbatim: the
+    page that served it can be edited later, and an audit asks what this
+    person saw, not what the page says today.
+
+    Args:
+        number: E.164 number the person entered.
+        disclosure: The exact checkbox wording they agreed to.
+        confirmation: Delivery state of the confirmation message,
+            ``"sent"``, ``"failed"``, or ``"unconfigured"``.
+        pid: Prolific participant ID, when the consent came from a
+            recruited participant rather than a public visitor.
+        ip: Caller address, hashed for rate limiting only.
+
+    Returns:
+        The row id of the recorded consent.
+
+    Example:
+        >>> import tempfile, os
+        >>> init_db(os.path.join(tempfile.mkdtemp(), "d.db"))
+        >>> record_optin("+15551230000", "I agree...", "sent") > 0
+        True
+    """
+    with _write_lock:
+        cursor = connection().execute(
+            "INSERT INTO sms_optins"
+            " (phone_hash, pid, ip_hash, disclosure, confirmation, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                hash_phone(number),
+                pid,
+                hash_phone(ip) if ip else None,
+                disclosure,
+                confirmation,
+                time.time(),
+            ),
+        )
+        connection().commit()
+    log_event("sms_optin", pid=pid, detail=confirmation)
+    return int(cursor.lastrowid)
+
+
+def optin_count(
+    number: str | None = None, ip: str | None = None, window_seconds: float = 86400.0
+) -> int:
+    """Count recent opt-ins from one number or one address.
+
+    An endpoint that sends a text message to whatever number is posted to
+    it is a way to send text messages to strangers. This is what the rate
+    limit is checked against.
+
+    Args:
+        number: E.164 number to count, or None.
+        ip: Caller address to count, or None.
+        window_seconds: How far back to look.
+
+    Returns:
+        The number of opt-ins recorded in the window.
+    """
+    since = time.time() - window_seconds
+    if number is not None:
+        column, value = "phone_hash", hash_phone(number)
+    elif ip is not None:
+        column, value = "ip_hash", hash_phone(ip)
+    else:
+        return 0
+    row = connection().execute(
+        f"SELECT COUNT(*) AS n FROM sms_optins WHERE {column} = ? AND created_at > ?",
+        (value, since),
+    ).fetchone()
+    return int(row["n"])
 
 
 def all_participants() -> Iterator[Participant]:

@@ -26,7 +26,8 @@ Routes
 ``GET  /``                  Public study information page. Use this URL as
                             the opt-in URL in A2P campaign registration; it
                             requires no session and no query parameters.
-``GET  /sms-terms``         Public messaging terms page.
+``GET  /sms-terms``         Redirect to the canonical messaging terms.
+``GET  /sms-privacy``       Redirect to the canonical privacy notice.
 ``GET  /start``             Prolific entry point.
 ``GET  /consent``           Consent form.
 ``POST /consent``           Records consent, mints the code.
@@ -58,6 +59,7 @@ import os
 import re
 import secrets
 import time
+from urllib.parse import quote
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -66,6 +68,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+import httpx
 from pydantic import BaseModel
 
 import store
@@ -75,17 +78,68 @@ STUDY_SMS_NUMBER = os.environ.get("STUDY_SMS_NUMBER", "+1 (507) 431-7807")
 ORG_NAME = os.environ.get("ORG_NAME", "Child Mind Institute")
 CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "olivia.fitzpatrick@childmind.org")
 PRIVACY_URL = "https://childmind.org/privacy/"
-# The public opt-in page carriers review. It lives on the organization's
-# own domain, alongside the terms and privacy notices submitted with the
-# A2P campaign, because a reviewer trusts those more than a study host.
-OPTIN_URL = os.environ.get(
-    "OPTIN_URL", "https://matter.childmind.org/studies/dash/"
+# The messaging policy pages are canonical on the organization's domain: they
+# are the URLs submitted with the A2P campaign, and the versions a carrier
+# reviewer has already passed. This site keeps no copy of its own — a second
+# copy is how the pre-rejection opt-in wording survived on a live page after
+# the canonical text had been corrected.
+SMS_TERMS_URL = os.environ.get(
+    "SMS_TERMS_URL", "https://matter.childmind.org/sms-terms/"
+)
+SMS_PRIVACY_URL = os.environ.get(
+    "SMS_PRIVACY_URL", "https://matter.childmind.org/sms-privacy/"
 )
 TERMS_URL = "https://childmind.org/terms/"
 
 # Expected duration drives the code lifetime and the wording on every page.
 # The screener branches heavily, so the range is wide and stated as a range.
 DURATION_TEXT = "30 to 60 minutes"
+
+# The name on the A2P campaign application. A reviewer opening the opt-in
+# URL matches what they read against the campaign in front of them, so the
+# page has to call the program what the application calls it.
+PROGRAM_NAME = "DASH text-message interviewer pilot"
+
+# The public opt-in page, hosted on the organization's own CMS. It posts here
+# from the browser, so its origin is the one allowed to call /api/opt-in.
+OPTIN_PAGE_URL = os.environ.get(
+    "OPTIN_PAGE_URL", "https://matter.childmind.org/studies/dash/opt-in/"
+)
+OPTIN_PAGE_ORIGIN = os.environ.get("OPTIN_PAGE_ORIGIN", "https://matter.childmind.org")
+# Where that page posts its form. Named here so the generated page and the
+# endpoint that answers it cannot disagree about the address.
+OPTIN_API_URL = os.environ.get(
+    "OPTIN_API_URL", "https://study.arnoklein.info/api/opt-in"
+)
+
+# The exact checkbox wording. Stored verbatim with every consent, so it is
+# defined once here and rendered into every page that collects consent: the
+# CMS page is generated from this constant rather than retyping it, because a
+# disclosure that differs between the page and the audit record is worthless.
+OPTIN_DISCLOSURE = (
+    "I agree to receive SMS from Child Mind Institute for the DASH "
+    "text-message interview pilot. Message and data rates may apply. "
+    "Message frequency varies (approximately 100-200 messages per session). "
+    "Reply STOP to cancel or HELP for help. "
+    "Privacy: https://childmind.org/privacy/ Terms: https://childmind.org/terms/"
+)
+CONFIRMATION_SMS = (
+    "Child Mind Institute: You are opted in for the DASH pilot. Msg & data "
+    "rates may apply. Msg freq varies. Reply STOP to cancel, HELP for help."
+)
+
+# Outbound send. No credentials ship with this repo: the provider endpoint is
+# whatever Retell exposes for sending from the study number, and until it is
+# configured the endpoint records consent and reports that the confirmation
+# was not sent rather than pretending it was.
+SMS_SEND_URL = os.environ.get("SMS_SEND_URL", "")
+SMS_SEND_TOKEN = os.environ.get("SMS_SEND_TOKEN", "")
+
+# An endpoint that texts whatever number is posted to it is a way to text
+# strangers. These caps are per rolling day.
+MAX_OPTINS_PER_NUMBER = 3
+MAX_OPTINS_PER_IP = 10
+LAB_NAME = os.environ.get("LAB_NAME", "Child Mind Institute MATTER Lab")
 
 PROLIFIC_COMPLETE_URL = "https://app.prolific.com/submissions/complete?cc={code}"
 
@@ -230,11 +284,55 @@ def public_information_body() -> str:
         The inner HTML of the information page.
     """
     return f"""
-        <h1>Text-message research pilot</h1>
-        <p>{html.escape(ORG_NAME)} is a nonprofit children's mental health
-        organization. This page describes a text-message conversation study
-        being piloted to test whether an automated interviewer works reliably
-        before any research data is collected.</p>
+        <h1>{html.escape(PROGRAM_NAME)}</h1>
+        <p class="muted">A messaging program of {html.escape(LAB_NAME)}.
+        {html.escape(ORG_NAME)} is a nonprofit children's mental health
+        organization.</p>
+
+        <p>This page describes a text-message conversation program being
+        piloted to test whether an automated interviewer works reliably. It is
+        a pilot test of the software rather than a research study: the
+        responses are used only to check that the technology functions
+        correctly, and the research study it prepares for has not yet
+        begun.</p>
+
+        <h2>The study number, and how to opt in</h2>
+        <div class="card">
+          <p class="muted">Messages in this program are sent from and received
+          at</p>
+          <div class="number">{html.escape(STUDY_SMS_NUMBER)}</div>
+          <p>The number is published here so that anyone can see it without
+          agreeing to anything first.</p>
+        </div>
+
+        <p><strong>You opt in on our
+        <a href="{OPTIN_PAGE_URL}">opt-in page</a></strong>, by entering your
+        mobile number and ticking a box to agree. The box is not ticked for
+        you, and nothing is sent unless you tick it. We then send one
+        confirmation text, and the interview itself starts when you text us.
+        There is no other way to join: we do not buy, rent, or import phone
+        number lists.</p>
+
+        <div class="card">
+          <p>By opting in you agree to receive text messages from
+          {html.escape(ORG_NAME)} relating
+          to the {html.escape(PROGRAM_NAME)}.
+          <strong>Message frequency varies</strong>; one session runs
+          {html.escape(DURATION_TEXT)} as a continuous conversation of
+          approximately 100 to 200 messages.
+          <strong>Message and data rates may apply.</strong> Reply
+          <strong>STOP</strong> at any time to cancel. Reply
+          <strong>HELP</strong> for help, or email
+          <a href="mailto:{html.escape(CONTACT_EMAIL)}">{html.escape(CONTACT_EMAIL)}</a>.
+          Carriers are not liable for delayed or undelivered messages.</p>
+        </div>
+
+        <p>Participants recruited through Prolific are also given a
+        five-character code to send as that first message. The code is how a
+        conversation is matched to a Prolific submission so the participant
+        can be paid. It identifies a session; it is not what permits us to
+        message anyone, and messaging begins only once the participant has
+        texted us.</p>
 
         <h2>What participants do</h2>
         <p>Participants are recruited through the Prolific research platform.
@@ -243,33 +341,22 @@ def public_information_body() -> str:
         mental health screening questionnaire in character. No participant is
         asked about their own child or their own mental health.</p>
 
-        <h2>The study number, and how to opt in</h2>
-        <div class="card">
-          <p class="muted">Messages in this program come from</p>
-          <div class="number">{html.escape(STUDY_SMS_NUMBER)}</div>
-          <p><strong>You opt in by texting that number first.</strong> We
-          never send a message to a phone number that has not messaged us.
-          There is no list to join, no number to submit, and nothing to
-          agree to before the number is shown: it is published here, and
-          the first message is always yours.</p>
-        </div>
-        <p>Participants recruited through Prolific are also given a
-        five-character code to send as that first message. The code is how a
-        conversation is matched to a Prolific submission so the participant
-        can be paid. It identifies a session; it is not what permits us to
-        message anyone, and messaging begins only once the participant has
-        texted us.</p>
+        <h2>What the messages look like</h2>
+        <p class="muted">Hello! I am an AI assistant from
+        {html.escape(ORG_NAME)}, messaging you to ask some questions about the
+        child described in the persona you were given, as part of the DASH
+        Mental Health Screener. The first few questions ask about the child's
+        physical health.</p>
 
         <h2>Messaging terms</h2>
         <ul>
-          <li>Expected length: {html.escape(DURATION_TEXT)}, typically
-              100 to 200 messages in a single session.</li>
-          <li>Message and data rates may apply.</li>
-          <li>Reply STOP at any time to opt out. Reply HELP for help.</li>
+          <li>No marketing or promotional messages are ever sent from this
+              number.</li>
           <li>Phone numbers are used only to conduct the conversation. They
               are not sold, rented, or shared with third parties, and are not
               used for marketing.</li>
-          <li>Carriers are not liable for delayed or undelivered messages.</li>
+          <li>A number reaches us only because someone texted us. It is
+              hashed on arrival and the number itself is never stored.</li>
         </ul>
 
         <p class="muted">Taking part through Prolific? Open the study from
@@ -277,8 +364,8 @@ def public_information_body() -> str:
         identifier that resumes your session.</p>
 
         <p class="muted">Questions: {html.escape(CONTACT_EMAIL)} &middot;
-        <a href="/sms-privacy">SMS privacy notice</a> &middot;
-        <a href="/sms-terms">SMS terms and conditions</a> &middot;
+        <a href="{SMS_PRIVACY_URL}">SMS privacy notice</a> &middot;
+        <a href="{SMS_TERMS_URL}">SMS terms and conditions</a> &middot;
         <a href="{PRIVACY_URL}">Organization privacy policy</a> &middot;
         <a href="{TERMS_URL}">Organization terms of use</a></p>
         """
@@ -295,143 +382,31 @@ async def public_information() -> HTMLResponse:
     Returns:
         The information page.
     """
-    return page("Study information", public_information_body())
+    return page(PROGRAM_NAME, public_information_body())
 
 
-@app.get("/sms-privacy", response_class=HTMLResponse)
-async def sms_privacy() -> HTMLResponse:
-    """Serve the SMS privacy notice.
+@app.get("/sms-privacy")
+async def sms_privacy() -> RedirectResponse:
+    """Redirect to the canonical SMS privacy notice.
 
-    Submitted as the Privacy Policy URL on the A2P campaign application.
-    Kept separate from the terms page because the application asks for two
-    distinct URLs, and a reviewer opening the privacy field expects a
-    document about data handling rather than about service conditions.
-
-    Returns:
-        The privacy page.
-    """
-    return page(
-        "SMS privacy notice",
-        f"""
-        <h1>SMS privacy notice</h1>
-        <p>This notice covers phone numbers and message content for
-        text-message pilot testing and research operated by
-        {html.escape(ORG_NAME)}, a nonprofit children's mental health
-        organization. It supplements our
-        <a href="{PRIVACY_URL}">organization-wide privacy policy</a>.</p>
-
-        <h2>Phone numbers are never shared or sold</h2>
-        <p><strong>We do not sell, rent, trade, or share mobile phone numbers
-        or SMS opt-in data with third parties or affiliates for marketing or
-        promotional purposes.</strong> No mobile information is shared with
-        third parties for their own purposes under any circumstances.</p>
-        <p>Numbers are disclosed only to the service providers that deliver
-        the messages on our behalf: our messaging carrier, which transmits
-        them, and our conversational agent provider, which processes the
-        conversation. Those providers may not use the information for any
-        other purpose.</p>
-
-        <h2>What we store</h2>
-        <p>Your phone number reaches us as an unavoidable part of sending a
-        text message. It is converted to an irreversible cryptographic hash
-        on arrival, and the number itself is never written to our database.
-        We retain the text of the conversation and a randomly generated
-        study code that has no meaning outside our own systems.</p>
-
-        <h2>How long we keep it</h2>
-        <p>Conversation records are retained for the duration of the study
-        and then deleted. Hashed numbers are deleted on the same schedule.</p>
-
-        <h2>Your choices</h2>
-        <p>Reply STOP at any time to end messaging. To request deletion of
-        your records, email {html.escape(CONTACT_EMAIL)} with the study code
-        you were given.</p>
-
-        <p class="muted">Contact: {html.escape(CONTACT_EMAIL)} &middot;
-        <a href="{PRIVACY_URL}">Organization privacy policy</a> &middot;
-        <a href="/sms-terms">SMS terms and conditions</a></p>
-        """,
-    )
-
-
-@app.get("/sms-terms", response_class=HTMLResponse)
-async def sms_terms() -> HTMLResponse:
-    """Serve the SMS terms and conditions.
-
-    Submitted as the Terms and Conditions URL on the A2P campaign
-    application.
+    The notice itself lives on the organization's domain, which is the URL
+    submitted as the campaign's Privacy Policy URL. The route is kept so
+    that links printed or indexed before the move continue to resolve.
 
     Returns:
-        The terms page.
+        A permanent redirect.
     """
-    return page(
-        "SMS terms and conditions",
-        f"""
-        <h1>SMS terms and conditions</h1>
-        <p>These terms govern text messages sent and received in connection
-        with text-message pilot testing and research operated by
-        {html.escape(ORG_NAME)}. They supplement our
-        <a href="{TERMS_URL}">organization-wide terms of use</a>.</p>
+    return RedirectResponse(SMS_PRIVACY_URL, status_code=301)
 
-        <h2>Program description</h2>
-        <p>An automated interviewer conducts a standardized questionnaire by
-        text message. Messages consist of questionnaire items and replies to
-        what you send. No marketing or promotional messages are ever sent from
-        this number.</p>
-        <p>The current program is a pilot test of that messaging system, run
-        in preparation for a research study that has not yet begun and for
-        which {html.escape(ORG_NAME)} will apply for Institutional Review
-        Board review.</p>
-        <p>Each participant is given a short written persona describing a
-        fictional parent and child, and answers the questionnaire in
-        character. No participant is asked about their own child or their own
-        mental health.</p>
 
-        <h2>How you opt in</h2>
-        <p>The number <strong>{html.escape(STUDY_SMS_NUMBER)}</strong> is
-        published publicly on our
-        <a href="{OPTIN_URL}">pilot information page</a>. Anyone can see it
-        without agreeing to anything first. You opt in by sending a text
-        message to that number yourself, and that message is the opt-in.
-        Every conversation is started by the participant. We never message a
-        number that has not messaged us first, and we do not buy, rent, or
-        import phone number lists.</p>
-        <p>Participants are recruited through the Prolific research platform
-        and are given a one-time code to text, which links the conversation to
-        their submission. The code identifies the session; it is not a
-        condition of seeing the number or of contacting us.</p>
+@app.get("/sms-terms")
+async def sms_terms() -> RedirectResponse:
+    """Redirect to the canonical SMS terms and conditions.
 
-        <h2>Message frequency</h2>
-        <p>Expected length is {html.escape(DURATION_TEXT)}, typically 100 to
-        200 messages in a single session.</p>
-
-        <h2>Cost</h2>
-        <p>Message and data rates may apply. We do not charge for
-        participation.</p>
-
-        <h2>Opting out and getting help</h2>
-        <p>Reply <strong>STOP</strong> at any time to end the conversation and
-        receive no further messages. Reply <strong>HELP</strong> for
-        assistance, or email {html.escape(CONTACT_EMAIL)}. Opting out does not
-        affect your standing on Prolific or your compensation for work already
-        completed.</p>
-
-        <h2>Carriers and delivery</h2>
-        <p>Carriers are not liable for delayed or undelivered messages.
-        Supported carriers vary and delivery is not guaranteed on all
-        networks.</p>
-
-        <h2>Consent</h2>
-        <p>Consent to receive text messages is not a condition of any purchase
-        and is not required to participate in any other
-        {html.escape(ORG_NAME)} activity. Participation is voluntary and may
-        be withdrawn at any time.</p>
-
-        <p class="muted">Contact: {html.escape(CONTACT_EMAIL)} &middot;
-        <a href="{TERMS_URL}">Organization terms of use</a> &middot;
-        <a href="/sms-privacy">SMS privacy notice</a></p>
-        """,
-    )
+    Returns:
+        A permanent redirect.
+    """
+    return RedirectResponse(SMS_TERMS_URL, status_code=301)
 
 
 def missing_identifier_page() -> HTMLResponse:
@@ -636,7 +611,7 @@ async def consent_form(pid: str | None = None) -> HTMLResponse:
         The consent page, or the public information page.
     """
     if not pid:
-        return page("Study information", public_information_body())
+        return page(PROGRAM_NAME, public_information_body())
 
     require(pid)
     safe_pid = html.escape(pid)
@@ -693,11 +668,12 @@ async def consent_form(pid: str | None = None) -> HTMLResponse:
         <div class="card">
           <p class="muted">You will text</p>
           <div class="number">{html.escape(STUDY_SMS_NUMBER)}</div>
-          <p>You start the conversation by texting this number from your own
-          phone. We never text a number that has not texted us first, so
-          nothing is sent to you unless and until you message us. Agreeing
-          below records your consent to take part; it does not send you any
-          messages.</p>
+          <p>Agreeing below records your consent to take part in the pilot. It
+          does not send you any messages and does not sign you up for anything.
+          Text messages are a separate, optional step: after this page you are
+          shown our opt-in page, where you enter your mobile number and tick a
+          box to agree to receive them. You can take part only if you complete
+          that step, but nothing is sent to you until you do.</p>
         </div>
 
         <h2>Messaging terms</h2>
@@ -708,7 +684,9 @@ async def consent_form(pid: str | None = None) -> HTMLResponse:
         sold or shared. See the
         <a href="{PRIVACY_URL}">privacy policy</a> and
         <a href="{TERMS_URL}">terms of use</a>, plus our
-        <a href="/sms-terms">messaging terms</a>.</p>
+        <a href="{SMS_TERMS_URL}">messaging terms</a> and
+        <a href="{SMS_PRIVACY_URL}">SMS privacy notice</a>, which describes
+        what happens to your phone number.</p>
 
         <h2>A note on the questions</h2>
         <p>The questionnaire is a standardized mental health screener, so some
@@ -724,10 +702,11 @@ async def consent_form(pid: str | None = None) -> HTMLResponse:
         anything goes wrong or you want to know more.</p>
 
         <h2>Your decision</h2>
-        <p>Agreeing takes you to a page showing the number again with your
-        one-time code. Declining returns you to Prolific straight away, with
-        a code that pays you for the time you spent reading this. Either way
-        you are never sent a text message you did not ask for.</p>
+        <p>Agreeing takes you to the next step: opting in to text messages,
+        and then the number again with your one-time code. Declining returns
+        you to Prolific straight away, with a code that pays you for the time
+        you spent reading this. Either way you are never sent a text message
+        you did not ask for.</p>
 
         <form method="post" action="/consent?pid={safe_pid}">
           <button type="submit" name="decision" value="consent">
@@ -788,10 +767,22 @@ async def begin(pid: str) -> HTMLResponse:
         return RedirectResponse(f"/consent?pid={pid}", status_code=303)
 
     sms_link = f"sms:{STUDY_SMS_NUMBER.replace(' ', '')}&body={participant.code}"
+    optin_link = f"{OPTIN_PAGE_URL}?pid={quote(pid)}"
     return page(
         "Start the interview",
         f"""
-        <h1>Text us to begin</h1>
+        <h1>Two steps to begin</h1>
+
+        <h2>Step 1: opt in to text messages</h2>
+        <p><a class="btn" href="{html.escape(optin_link)}">Opt in to text
+        messages</a></p>
+        <p class="muted">This opens our opt-in page, where you enter your
+        mobile number and tick a box to agree to receive messages. The box is
+        not ticked for you. We send one confirmation text, and then you send
+        the code below. Opting in through that page is what records your
+        permission to be messaged.</p>
+
+        <h2>Step 2: text us the code</h2>
         <div class="card">
           <p class="muted">Send a text message to</p>
           <div class="number">{html.escape(STUDY_SMS_NUMBER)}</div>
@@ -870,6 +861,201 @@ async def status(pid: str) -> dict[str, Any]:
             PROLIFIC_COMPLETE_URL.format(code=code) if complete and code else None
         ),
     }
+
+
+def normalize_phone(raw: str) -> str | None:
+    """Reduce a typed phone number to E.164, or reject it.
+
+    Deliberately narrow: North American numbers only, which is the only
+    region this study recruits in. A number that does not fit is refused
+    rather than guessed at, because the cost of guessing is a text message
+    sent to a stranger.
+
+    Args:
+        raw: The number as typed, in any common punctuation.
+
+    Returns:
+        The E.164 number, or None if it is not a valid NANP number.
+
+    Example:
+        >>> normalize_phone("(507) 431-7807")
+        '+15074317807'
+        >>> normalize_phone("1-507-431-7807")
+        '+15074317807'
+        >>> normalize_phone("+44 20 7946 0958") is None
+        True
+        >>> normalize_phone("555-1234") is None
+        True
+    """
+    digits = re.sub(r"\D", "", raw)
+    if raw.strip().startswith("+") and not digits.startswith("1"):
+        return None
+    if len(digits) == 11 and digits.startswith("1"):
+        digits = digits[1:]
+    if len(digits) != 10:
+        return None
+    # NANP area codes and exchange codes both start 2-9.
+    if digits[0] in "01" or digits[3] in "01":
+        return None
+    return f"+1{digits}"
+
+
+async def send_confirmation_sms(number: str) -> str:
+    """Send the opt-in confirmation message.
+
+    Args:
+        number: E.164 destination.
+
+    Returns:
+        ``"sent"``, ``"failed"``, or ``"unconfigured"`` when no provider
+        endpoint is set. The caller records whichever it gets: a consent
+        whose confirmation never went out is still a consent, and the
+        difference is exactly what an audit would ask about.
+    """
+    if not SMS_SEND_URL:
+        store.log_event("confirmation_unconfigured")
+        return "unconfigured"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                SMS_SEND_URL,
+                headers={"Authorization": f"Bearer {SMS_SEND_TOKEN}"},
+                json={
+                    "from_number": STUDY_SMS_NUMBER,
+                    "to_number": number,
+                    "text": CONFIRMATION_SMS,
+                },
+            )
+        response.raise_for_status()
+        return "sent"
+    except Exception as error:  # noqa: BLE001 - provider errors are opaque
+        store.log_event("confirmation_failed", detail=type(error).__name__)
+        return "failed"
+
+
+class OptIn(BaseModel):
+    """Payload from the opt-in form.
+
+    Attributes:
+        phone: The number as typed by the person.
+        consent: Whether the disclosure checkbox was checked. The field
+            has no default: an absent value is a rejected submission, not
+            an assumed yes.
+        pid: Prolific participant ID, when a recruited participant opts in
+            rather than a member of the public.
+    """
+
+    phone: str
+    consent: bool
+    pid: str | None = None
+
+
+def cors_headers() -> dict[str, str]:
+    """Return the headers letting the CMS page call this endpoint.
+
+    The opt-in page is served from the organization's CMS and posts here
+    from the browser, which makes this a cross-origin request. Exactly one
+    origin is allowed.
+
+    Returns:
+        Response headers for the opt-in endpoint.
+    """
+    return {
+        "Access-Control-Allow-Origin": OPTIN_PAGE_ORIGIN,
+        "Access-Control-Allow-Headers": "content-type",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Max-Age": "600",
+    }
+
+
+@app.options("/api/opt-in")
+async def opt_in_preflight() -> Response:
+    """Answer the browser's preflight for the cross-origin opt-in POST.
+
+    Returns:
+        An empty 204 carrying the CORS headers.
+    """
+    return Response(status_code=204, headers=cors_headers())
+
+
+@app.post("/api/opt-in")
+async def opt_in(payload: OptIn, request: Request) -> JSONResponse:
+    """Record express written consent and send the confirmation message.
+
+    This is the opt-in of record. The checkbox is unchecked when the page
+    loads, the disclosure sits beside it, and this endpoint refuses the
+    submission unless it arrives checked — an opt-in that can happen by
+    default is not consent.
+
+    Args:
+        payload: Number, consent flag, and optional Prolific ID.
+        request: The request, for the caller address used in rate limiting.
+
+    Returns:
+        A JSON body the page shows the visitor. It reports whether the
+        confirmation message went out, and never reveals whether a number
+        had opted in before: that would turn the endpoint into a way of
+        testing whether a given number is in the study.
+    """
+    headers = cors_headers()
+    if not payload.consent:
+        return JSONResponse(
+            {"ok": False, "error": "Please tick the box to agree before continuing."},
+            status_code=400,
+            headers=headers,
+        )
+
+    number = normalize_phone(payload.phone)
+    if number is None:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "Please enter a 10-digit US or Canadian mobile number.",
+            },
+            status_code=400,
+            headers=headers,
+        )
+
+    caller = request.client.host if request.client else None
+    if store.optin_count(number=number) >= MAX_OPTINS_PER_NUMBER or (
+        caller and store.optin_count(ip=caller) >= MAX_OPTINS_PER_IP
+    ):
+        store.log_event("optin_rate_limited")
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "That number has already been signed up today. "
+                f"Email {CONTACT_EMAIL} if you need help.",
+            },
+            status_code=429,
+            headers=headers,
+        )
+
+    confirmation = await send_confirmation_sms(number)
+    store.record_optin(
+        number,
+        disclosure=OPTIN_DISCLOSURE,
+        confirmation=confirmation,
+        pid=payload.pid,
+        ip=caller,
+    )
+    if payload.pid:
+        store.set_phone_hash(payload.pid, number)
+
+    return JSONResponse(
+        {
+            "ok": True,
+            "confirmed": confirmation == "sent",
+            "message": (
+                "You are opted in. Check your phone for a confirmation text, "
+                f"then text {STUDY_SMS_NUMBER} to begin."
+                if confirmation == "sent"
+                else "You are opted in. Text "
+                f"{STUDY_SMS_NUMBER} to begin."
+            ),
+        },
+        headers=headers,
+    )
 
 
 class RetellFunctionCall(BaseModel):
