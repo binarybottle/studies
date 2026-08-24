@@ -909,6 +909,20 @@ def normalize_phone(raw: str) -> str | None:
 async def send_confirmation_sms(number: str) -> str:
     """Send the opt-in confirmation message.
 
+    Posts to Retell's ``create-sms-chat``, which opens an outbound-initiated
+    SMS chat from the study number. Two consequences are worth knowing:
+
+    The first message is authored by the agent bound to the study number,
+    not necessarily by the ``text`` sent here. For the message to match the
+    wording registered with the campaign, that agent's begin message has to
+    be the confirmation text.
+
+    Because it opens a chat rather than sending a bare message, the
+    conversation the participant later texts into is this one. That is
+    convenient — the code they send arrives in an existing chat — but it
+    also means the agent's silence timers start at opt-in rather than at
+    the participant's first message.
+
     Args:
         number: E.164 destination.
 
@@ -916,27 +930,42 @@ async def send_confirmation_sms(number: str) -> str:
         ``"sent"``, ``"failed"``, or ``"unconfigured"`` when no provider
         endpoint is set. The caller records whichever it gets: a consent
         whose confirmation never went out is still a consent, and the
-        difference is exactly what an audit would ask about.
+        difference is exactly what an audit would ask about. Note that a
+        carrier silently filters outbound messages until the A2P campaign
+        is approved, so ``"sent"`` means the provider accepted it, not that
+        it was delivered.
     """
     if not SMS_SEND_URL:
         store.log_event("confirmation_unconfigured")
         return "unconfigured"
+    # The study number is configured in a human-readable form for display.
+    # The API wants E.164, and rejects the punctuation.
+    from_number = normalize_phone(STUDY_SMS_NUMBER) or STUDY_SMS_NUMBER
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.post(
                 SMS_SEND_URL,
                 headers={"Authorization": f"Bearer {SMS_SEND_TOKEN}"},
                 json={
-                    "from_number": STUDY_SMS_NUMBER,
+                    "from_number": from_number,
                     "to_number": number,
                     "text": CONFIRMATION_SMS,
                 },
             )
         response.raise_for_status()
-        return "sent"
     except Exception as error:  # noqa: BLE001 - provider errors are opaque
         store.log_event("confirmation_failed", detail=type(error).__name__)
         return "failed"
+
+    # The response identifies the chat this opened. Recording it means a
+    # conversation can still be traced to its opt-in if the participant
+    # never sends their code, which the linkage table alone would miss.
+    try:
+        chat_id = response.json().get("chat_id")
+    except Exception:  # noqa: BLE001 - a non-JSON body is not an error here
+        chat_id = None
+    store.log_event("confirmation_sent", chat_id=chat_id)
+    return "sent"
 
 
 class OptIn(BaseModel):

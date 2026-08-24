@@ -84,11 +84,13 @@ the same page and check the same box; no other route to opting in exists. The
 number entered is used to send the confirmation message and is then stored
 only as an irreversible hash.
 
-**Do not submit until both are true:** the page is published at that URL, and
-`SMS_SEND_URL` is configured so the confirmation message actually sends. Until
-the second is set the endpoint records each consent and reports the
-confirmation as unconfigured, which is the honest behavior but not what this
-field describes.
+**On the confirmation message and approval order.** Carriers filter outbound
+A2P messages until the campaign is approved, so the confirmation cannot
+actually be delivered before TCR clears the campaign this field is part of.
+That is expected: the field describes the flow that runs once approved, and
+the flow is built and configured rather than promised. What must be true
+before submitting is that the page is published, the send is configured, and
+the agent's begin message matches the confirmation text quoted above.
 
 ## 6. Privacy Policy URL
 
@@ -162,10 +164,27 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 
 Expect 200. A 403 means the reviewer will see one too.
 
-**3. Get the outbound send endpoint from Retell** and set `SMS_SEND_URL` and
-`SMS_SEND_TOKEN` in `dash/.env`. Nothing else about the confirmation message
-needs building; the endpoint is written and tested against both a missing
-provider and an unreachable one.
+**3. Configure the send, and fix the agent's begin message.** Retell confirmed
+the endpoint: `POST https://api.retellai.com/create-sms-chat`, authenticated
+with your dashboard API key as a bearer token. `SMS_SEND_URL` already defaults
+to it; put the key in `SMS_SEND_TOKEN` in `dash/.env`.
+
+The part that is not just configuration: `create-sms-chat` opens a chat, and
+its first message is authored by **the outbound SMS agent bound to
++1 (507) 431-7807**, not necessarily by the `text` this application sends. Set
+that agent's begin message in the Retell dashboard to the confirmation text
+quoted in field 5, word for word. If it says anything else, the message
+participants receive will not match what the campaign registered, which is its
+own compliance problem.
+
+Two consequences of it being a chat rather than a bare message, worth deciding
+on deliberately:
+
+- The conversation the participant later texts their code into is this one, so
+  the agent must not begin interviewing before the code is verified.
+- The agent's silence timers start at opt-in, not at the participant's first
+  message. Someone who opts in and texts an hour later may find the chat
+  already closed.
 
 **4. Redeploy the study site:**
 
@@ -173,8 +192,20 @@ provider and an unreachable one.
 docker compose up -d --build dash
 ```
 
-**5. Test the whole path yourself** — open the published page, enter your own
-mobile number, tick the box, and confirm the text arrives.
+**5. Test what can be tested before approval** — open the published page,
+enter your own mobile number, tick the box, and confirm the request is accepted
+and recorded. The text itself will not arrive until the campaign is approved,
+because the carrier filters it; check the Retell dashboard for the chat the
+call created rather than waiting for a message on your phone. Test delivery
+again the day approval lands, before any participant sees the page.
+
+**6. Still open with Retell:** whether TCR requires the confirmation to precede
+the participant's first inbound message at all. Retell is opening a Twilio
+Support ticket rather than guessing. If the answer is that it does not, the
+form can drop the phone number field and go back to a checkbox alone, which
+restores the property that a number only ever reaches us because someone chose
+to text us. Do not spend effort tuning the number-collecting flow until that
+comes back.
 
 **The website is already updated** in the `matter-website` repository and
 needs only a commit and push. Three pages described the old consent model and
