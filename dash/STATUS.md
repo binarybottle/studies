@@ -130,6 +130,16 @@ Owned by us, in order:
 7. **When DNS lands:** switch hostnames. A runbook exists; four places name
    the host and three fail quietly if missed.
 
+## The agent flow does not link conversations yet
+
+The exported Retell flow reaches 412 of its 423 nodes from the start node.
+`Extract study code`, `Verify code` and `Code not accepted` are among the
+eleven it never reaches: they form a closed loop nothing points into, so the
+interview begins without a code and no conversation is ever bound to a
+Prolific submission. Fixing this is independent of the campaign and has to
+happen before any participant reaches the agent. Step-by-step dashboard
+changes are in `dash/optin/retell-flow-changes.md`.
+
 ## Traps — things that look fine and are not
 
 - **The confirmation text cannot be tested before approval.** Carriers filter
