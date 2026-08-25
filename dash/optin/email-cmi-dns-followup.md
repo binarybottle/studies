@@ -1,66 +1,64 @@
-# Follow-up to Child Mind Institute IT (David)
+# Reply to Child Mind Institute IT (David) — DNS confirmed, rule still blocking
 
-A reply on the same thread. The email already sent covers the DNS record, the
-grey-cloud requirement, the rule expression, and the certificate, so none of
-that is repeated here. Two things only, both learned afterwards, and the first
-answers the question that email ended on.
+The DNS record is live and correct. The skip rule matches but skips the wrong
+components, and its expression does not cover two of the three URLs filed with
+the carrier. Both are one-line fixes in the same rule.
 
-**Subject:** Re: DNS and Cloudflare — verified from outside CMI, still blocked
+**Subject:** Re: DNS confirmed working — one fix left on the Cloudflare rule
 
 Hi David,
 
-I asked in my last note whether the Cloudflare rule could be verified from a
-non-CMI network. I have now done that, and it is still blocked.
+**DNS is confirmed working, thank you.** From the authoritative server and
+from a public resolver, and the wildcard resolves for arbitrary names:
 
-From the droplet itself, 167.71.248.46, over SSH:
+    $ dig +short @deb.ns.cloudflare.com dash.studies.childmind.org A
+    167.71.248.46
+    $ dig +short @1.1.1.1 anything.studies.childmind.org A
+    167.71.248.46
 
-    /studies/dash/opt-in/    403
-    /sms-terms/              403
-    /                        403
+Grey cloud confirmed too — it answers with the droplet address rather than a
+Cloudflare one, which is what our certificate issuance needs. That side is
+done, and I can take it from here.
 
-Same result as from my home connection, so it is not our office network and
-not an address that could be allowlisted around — the rule does not appear to
-be matching these paths at all.
+**The challenge is still firing, including on the path your rule matches.**
+Just now, from a residential connection:
 
-It is also not only the opt-in page. Every path is challenged:
-
-    /studies/dash/opt-in/    403  cf-mitigated: challenge
+    /studies/dash/opt-in/    403  cf-mitigated: challenge   (cf-ray a30cfc633e55dd82-EWR)
     /sms-terms/              403  cf-mitigated: challenge
     /sms-privacy/            403  cf-mitigated: challenge
-    /                        403  cf-mitigated: challenge
 
-That last part is the reason I am following up so quickly rather than waiting.
-`matter.childmind.org/sms-terms/` and `/sms-privacy/` are the two URLs filed
-in our carrier registration, and that registration is under review right now.
-A reviewer checking them today gets a 403. A blocked request against
-/sms-terms/ from a moment ago is `cf-ray a30c77636dee6e2f-EWR`, if a second example
-helps locate the rule.
+Your description points at two causes, and I think both are real.
 
-Four things that would help, none of which I asked last time:
+**1. The skip list does not include Super Bot Fight Mode.** You have the
+action as "Skip WAF features (including Super Bot Fight Mode)", but the
+components listed are "All managed rules, All rate limiting rules". In the
+Skip action, Super Bot Fight Mode is its own checkbox — skipping managed rules
+and rate limiting does not skip it. Since the challenge is coming from SBFM's
+"Definitely automated traffic" setting, the rule can match all 93 requests and
+still let the challenge through, which is exactly what we are seeing. Ticking
+that box should be the whole fix.
 
-1. **Which Cloudflare feature is issuing the challenge — a WAF custom rule,
-   Bot Fight Mode, or Super Bot Fight Mode?** This may be the whole answer. As
-   I understand it, a custom rule with a Skip action can bypass Super Bot
-   Fight Mode but *not* plain Bot Fight Mode, which is a zone-level toggle
-   that runs on every request regardless of custom rules. If Bot Fight Mode is
-   what is on, no path-based exemption can work and it has to be switched off
-   for the zone.
+**2. The expression misses two of the three URLs that matter.**
+`(http.request.uri.path contains "/studies/")` does not match `/sms-terms/` or
+`/sms-privacy/`, and those two are the privacy policy and terms URLs filed in
+our carrier registration. Something like:
 
-2. **Is the rule saved and deployed, rather than sitting as a draft?** Worth
-   thirty seconds to rule out.
+    (starts_with(http.request.uri.path, "/studies/")) or
+    (starts_with(http.request.uri.path, "/sms-terms")) or
+    (starts_with(http.request.uri.path, "/sms-privacy"))
 
-3. **Could you paste the DNS record exactly as it appears** — name, type,
-   content, proxy status? If there is a typo in the name field, that would
-   explain the NXDOMAIN better than anything I can see from outside.
+If it is easy, `/text-study/` as well — the terms page links to it, so a
+reviewer following the trail lands there.
 
-4. **When do you think you can get to this?** Not chasing — I ask because our
-   carrier registration is being reviewed now, and if the challenge cannot be
-   lifted quickly I would rather know, so we can decide whether to withdraw
-   and resubmit later rather than have it rejected a third time.
+I can verify from outside the moment you have made the change; these are the
+checks:
 
-If a path exemption turns out not to be possible, would setting the challenge
-to log-only for this zone until the review completes be an option?
+    curl -s -o /dev/null -w '%{http_code}\n' https://matter.childmind.org/studies/dash/opt-in/
+    curl -s -o /dev/null -w '%{http_code}\n' https://matter.childmind.org/sms-terms/
+    curl -s -o /dev/null -w '%{http_code}\n' https://matter.childmind.org/sms-privacy/
 
-Thank you again for the quick turnaround on this.
+All three should return 200 rather than 403.
+
+Thanks again — this has moved quickly.
 
 Arno
