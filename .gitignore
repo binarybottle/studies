@@ -1,3 +1,6 @@
 .env
 __pycache__
 backups/
+study.db
+study.db-wal
+study.db-shm

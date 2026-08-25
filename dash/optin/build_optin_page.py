@@ -77,6 +77,9 @@ anything first.</p>
     <label for="consent">{disclosure}</label>
   </p>
 
+  <p>Privacy: <a href="{sms_privacy}">{sms_privacy}</a><br>
+  Terms: <a href="{sms_terms}">{sms_terms}</a></p>
+
   <p><button type="submit"
              style="font-size:1em; padding:0.6em 1.2em;">Opt in</button></p>
   <p id="result" role="status" aria-live="polite" style="font-weight:bold;"></p>

@@ -97,8 +97,13 @@ DURATION_TEXT = "30 to 60 minutes"
 
 # The name on the A2P campaign application. A reviewer opening the opt-in
 # URL matches what they read against the campaign in front of them, so the
-# page has to call the program what the application calls it.
+# page has to call the program what the application calls it. The campaign
+# covers the lab's participant messaging as a whole, not one study.
 PROGRAM_NAME = "Child Mind Institute MATTER Lab"
+
+# What this particular study calls itself, on its own pages. A different fact
+# from the program name: one campaign covers many studies.
+STUDY_NAME = "DASH text-message interviewer pilot"
 
 # The public opt-in page, hosted on the organization's own CMS. It posts here
 # from the browser, so its origin is the one allowed to call /api/opt-in.
@@ -289,8 +294,8 @@ def public_information_body() -> str:
         The inner HTML of the information page.
     """
     return f"""
-        <h1>{html.escape(PROGRAM_NAME)}</h1>
-        <p class="muted">A messaging program of {html.escape(LAB_NAME)}.
+        <h1>{html.escape(STUDY_NAME)}</h1>
+        <p class="muted">A study of {html.escape(LAB_NAME)}.
         {html.escape(ORG_NAME)} is a nonprofit children's mental health
         organization.</p>
 
@@ -319,9 +324,8 @@ def public_information_body() -> str:
         number lists.</p>
 
         <div class="card">
-          <p>By opting in you agree to receive text messages from
-          {html.escape(ORG_NAME)} relating
-          to the {html.escape(PROGRAM_NAME)}.
+          <p>By opting in you agree to receive text messages from the
+          {html.escape(PROGRAM_NAME)}.
           <strong>Message frequency varies</strong>; one session runs
           {html.escape(DURATION_TEXT)} as a continuous conversation of
           approximately 100 to 200 messages.
@@ -387,7 +391,7 @@ async def public_information() -> HTMLResponse:
     Returns:
         The information page.
     """
-    return page(PROGRAM_NAME, public_information_body())
+    return page(STUDY_NAME, public_information_body())
 
 
 @app.get("/sms-privacy")
@@ -616,7 +620,7 @@ async def consent_form(pid: str | None = None) -> HTMLResponse:
         The consent page, or the public information page.
     """
     if not pid:
-        return page(PROGRAM_NAME, public_information_body())
+        return page(STUDY_NAME, public_information_body())
 
     require(pid)
     safe_pid = html.escape(pid)

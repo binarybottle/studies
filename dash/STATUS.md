@@ -27,6 +27,7 @@ approved.
 | Study site (participant flow) | https://study.arnoklein.info |
 | Prolific study URL | https://study.arnoklein.info/start |
 | Opt-in page (cited in the campaign) | https://matter.childmind.org/studies/dash/opt-in/ |
+| A2P campaign / program name | Child Mind Institute MATTER Lab |
 | SMS terms | https://matter.childmind.org/sms-terms/ |
 | SMS privacy notice | https://matter.childmind.org/sms-privacy/ |
 | Pilot information page | https://matter.childmind.org/text-study/ |
@@ -91,6 +92,13 @@ opening it directly saw nothing.
    confirmation SMS, rather than treating "the participant texted us first"
    as the opt-in. → Built.
 
+The campaign is being resubmitted at **program level**, as the Child Mind
+Institute MATTER Lab's participant messaging, rather than as one DASH
+application. The opt-in page and both policy pages describe the program, not a
+single study; only the study site's own pages name the DASH pilot. One
+consequence: the campaign covers studies that do not exist yet, so nothing
+published under it should be worded as if DASH were the only one.
+
 ## What is waiting on other people
 
 | Waiting on | What | Why it matters |
@@ -109,8 +117,9 @@ Owned by us, in order:
    `dash/.env`, then redeploy (`docker compose up -d --build dash`).
 2. **Set the outbound agent's begin message** in the Retell dashboard to
    exactly the confirmation text registered with the campaign:
-   *"Child Mind Institute: You are opted in for the DASH pilot. Msg & data
-   rates may apply. Msg freq varies. Reply STOP to cancel, HELP for help."*
+   *"Child Mind Institute MATTER Lab: You are opted in to research study
+   messages. Msg & data rates may apply. Msg freq varies. Reply STOP to
+   cancel, HELP for help."*
 3. **Resubmit the A2P campaign.** The field text is written and ready.
 4. **Check the Prolific completion paths** — three codes exist (complete,
    attention-check failure, no-consent screen-out) and each needs the right

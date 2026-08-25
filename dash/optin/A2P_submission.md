@@ -11,7 +11,7 @@ receive the service." Field 5 is the substantive change; the rest is cleanup.
 
 ## 1. Application Name
 
-Child Mind Institute DASH text-message interviewer pilot
+Child Mind Institute MATTER Lab
 
 ---
 
@@ -23,21 +23,18 @@ Customer Care
 
 ## 3. Description for the use of sms
 
-The Child Mind Institute is testing an automated text-message interviewer.
-This is a pilot test of the software rather than a research study: its purpose
-is to confirm that the system works reliably before any research data is
-collected, and the responses are used only to check that the technology
-functions correctly. Testers are recruited through the Prolific research
-platform. Each tester is given a short written persona describing a fictional
-parent and a fictional child, and answers a standardized mental health
-screening questionnaire in character as that fictional parent. Testers are
-never asked about their own child, their own family, or their own mental
-health. Every conversation is started by the tester texting our published
-number.
-
-*(Changed from the original, which alternated between "they" and "you" and
-called the program a pilot and "not a research study" in consecutive
-sentences. A reviewer skimming can read that as inconsistency.)*
+The Child Mind Institute MATTER Lab runs research studies in which an
+automated interviewer conducts a standardized questionnaire by text message.
+Messages consist of questionnaire items and replies to what the participant
+sends. No marketing or promotional messages are ever sent from this number.
+Participants opt in on our published opt-in page before any message is sent to
+them. The current study is a pilot test of the messaging system, run in
+preparation for a research study that has not yet begun and for which the
+Child Mind Institute will apply for Institutional Review Board review. Each
+participant is given a short written persona describing a fictional parent and
+a fictional child, and answers a standardized mental health screening
+questionnaire in character as that fictional parent. Participants are never
+asked about their own child, their own family, or their own mental health.
 
 ---
 
@@ -45,36 +42,38 @@ sentences. A reviewer skimming can read that as inconsistency.)*
 
 **Sample A — welcome / confirmation, sent the moment consent is recorded**
 
-Child Mind Institute: You are opted in for the DASH pilot. Msg & data rates
-may apply. Msg freq varies. Reply STOP to cancel, HELP for help.
+Child Mind Institute MATTER Lab: You are opted in to research study messages.
+Msg & data rates may apply. Msg freq varies. Reply STOP to cancel, HELP for
+help.
 
-**Sample B — first interview message**
+**Sample B — first message of a session**
 
 Hello! I am an AI assistant from the Child Mind Institute, messaging you to
 ask some questions about the child described in the persona you were given, as
 part of the DASH Mental Health Screener. The first few questions ask about
-Alex's physical health. Msg & data rates may apply. Reply STOP to cancel, HELP
-for help.
+{{child_name}}'s physical health. Msg & data rates may apply. Reply STOP to
+cancel, HELP for help.
 
-**On the placeholder.** You asked me not to substitute `{{child_name}}`, and
-the reviewer's item 3 requires it. Both hold: the application shows a rendered
-example, because an unsubstituted token in a submitted sample is what the
-reviewer flagged, while the agent's own prompt template keeps `{{child_name}}`
-and fills it per participant. Nothing in the agent changes.
+**On the placeholder.** `{{child_name}}` is left as written, on your
+instruction. The reviewer's item 3 asked for it to be substituted, so expect
+the question again; the answer is that it is a template variable filled per
+participant, and Sample A — the message every opted-in person receives, and
+the one the footer requirement is about — contains no placeholder.
+
+---
 
 ## 5. How do end-users consent to receive messages?
 
-End-users opt in to receive SMS from Child Mind Institute by visiting
-https://matter.childmind.org/studies/dash/opt-in/ and checking an optional,
-unchecked box that reads: "I agree to receive SMS from Child Mind Institute
-for the DASH text-message interview pilot. Message and data rates may apply.
-Message frequency varies (approximately 100-200 messages per session). Reply
-STOP to cancel or HELP for help. Privacy:
-https://matter.childmind.org/sms-privacy/ Terms:
-https://matter.childmind.org/sms-terms/". Upon consent, the user receives a
-confirmation SMS: "Child Mind Institute: You are opted in for the DASH pilot.
-Msg & data rates may apply. Msg freq varies. Reply STOP to cancel, HELP for
-help."
+End-users opt in to receive SMS from the Child Mind Institute MATTER Lab by
+visiting https://matter.childmind.org/studies/dash/opt-in/ and checking an
+optional, unchecked box that reads: "I agree to receive text messages from the
+Child Mind Institute MATTER Lab at this number. Msg & data rates may apply.
+Msg freq varies. Reply STOP to cancel, HELP for help." Our privacy policy
+(https://matter.childmind.org/sms-privacy/) and terms
+(https://matter.childmind.org/sms-terms/) are linked directly beside that
+checkbox. Upon consent, the user receives a confirmation SMS: "Child Mind
+Institute MATTER Lab: You are opted in to research study messages. Msg & data
+rates may apply. Msg freq varies. Reply STOP to cancel, HELP for help."
 
 The box is unchecked when the page loads and the submission is refused unless
 it arrives checked. The page is publicly reachable with no login and no query
