@@ -36,6 +36,32 @@ Two instructions in them do not match the export:
 
 Everything else in those notes checks out and is folded in below.
 
+## How to apply it
+
+All seven changes are applied by `patch_retell_flow.py` in this directory:
+
+```bash
+python dash/optin/patch_retell_flow.py \
+    ~/Downloads/"DASH-MH-P-GS TEXT (1).json" \
+    ~/Downloads/"DASH-MH-P-GS TEXT (patched).json"
+```
+
+`DASH-MH-P-GS TEXT (patched).json` is written and checked: the start node is
+the confirmation, the verification path is reachable, and the confirmation
+text matches `CONFIRMATION_SMS` in `study_site.py` byte for byte. **Import it
+into Retell as a new version and diff it in the canvas before publishing** —
+the script has been run against the export, not against Retell's importer,
+and how that importer treats an export with an empty `agent_id` is not
+something this repository can verify.
+
+Each edit asserts what it expects to find first, so if the live flow has
+moved on since the export, re-export and re-run: it will fail loudly rather
+than quietly producing something different.
+
+The steps below describe what the script does, in the order it does it, so
+the diff can be read against them — or clicked by hand if you would rather
+not import.
+
 ## What to change, in order
 
 ### 1. Start node — the confirmation message
@@ -120,13 +146,20 @@ chat. Raise it to 48 or 72 hours if the dashboard allows.
 
 ## Check before you trust it
 
-**The tools post form data; the endpoints read JSON.** Both `verify_code` and
-`complete_study` are configured `parameter_type: form`, and both endpoints
-parse a JSON body through a Pydantic model. If Retell sends
-`application/x-www-form-urlencoded`, FastAPI answers 422, `code_valid` is
-never set, and with the current wiring the interview starts anyway. Test one
-call in the simulator and watch the study site's logs. If it 422s, either
-switch the tools to JSON or widen the endpoints to accept both.
+**Encoding: fixed, nothing to check.** Both tools are configured
+`parameter_type: form` while the endpoints parsed only JSON, so a form body
+would have answered 422, left `code_valid` unset, and — under the old wiring
+— started the interview anyway. The endpoints now accept form and JSON
+either way, flat or nested under `args`, including a `call` object arriving
+as a JSON string. Whatever the dashboard is set to, the call lands.
+
+**`{{code_valid}} == true` is the one thing to watch.** The endpoint answers
+with a JSON boolean and Retell stores response variables as text; which
+spelling arrives is not documented. The success edge therefore matches
+`true`, `True`, or `1`. If a valid code still routes to `Code not accepted`
+in the simulator, the spelling is something else again — read it off the
+variables panel and add it. It fails closed, so the symptom is a rejected
+good code, never an unlinked interview.
 
 Argument names and URLs are correct: `participant_code` for `verify_code`,
 `ac1`/`ac2`/`ac3` for `complete_study`, both pointing at the study host. Both
@@ -153,17 +186,23 @@ study opens.
 
 None of this blocks the campaign; all of it affects data.
 
-- **Q181 fb05, "How trustworthy did you feel the AI agent was?", is
-  unreachable.** The feedback chain runs fb04 -> fb06. Its extract node also
-  has an edge with no destination, so the question would dead-end even if
-  reached. Anyone analysing the feedback battery will find that item empty.
-- **Q102 dpscr097 ("What is it?") is unreachable and dead-ends** — nothing
-  points to it, and its only edge has no destination.
-- **Preamble: Service Use is unreachable** and its skip edge has no
-  destination.
-- **Q177 fb01** has a Skip/Next Question edge with no destination.
+- **Q181 fb05, "How trustworthy did you feel the AI agent was?", was
+  unreachable** — the feedback chain ran fb04 -> fb06, and its extract node
+  had an edge with no destination, so the question would have dead-ended even
+  if reached. The script splices it back in between fb04 and fb06, which is
+  plainly where it belongs; nothing else about the battery changes.
 - Two empty **Code** nodes and one empty **Subagent** node, all unreachable,
-  all with dangling edges. Delete them.
+  all with dangling edges. The script deletes them.
+
+Three things the script deliberately leaves alone, because each needs a
+decision about the questionnaire rather than a repair:
+
+- **Q102 dpscr097 ("What is it?") is unreachable and dead-ends.** It reads
+  like a follow-up to Q101, but where it belongs is a research call.
+- **Preamble: Service Use is unreachable** and its skip edge has no
+  destination. Its questions are asked; only the preamble is orphaned.
+- **Q177 fb01** has a Skip/Next Question edge with no destination. Whether
+  skipping a feedback item should be allowed at all is your call.
 
 ## For the campaign application, if TCR comes back
 

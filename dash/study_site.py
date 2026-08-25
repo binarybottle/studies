@@ -55,6 +55,7 @@ from __future__ import annotations
 
 import hashlib
 import html
+import json
 import os
 import re
 import secrets
@@ -64,7 +65,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -872,6 +873,53 @@ async def status(pid: str) -> dict[str, Any]:
     }
 
 
+async def retell_payload(request: Request) -> RetellFunctionCall:
+    """Read a Retell function-call body whether it is JSON or form encoded.
+
+    A custom tool's ``parameter_type`` decides which one it sends, and that
+    setting lives in the Retell dashboard rather than here. Accepting both
+    means the setting cannot silently break the linkage: a body this
+    application refuses is a 422, which leaves ``code_valid`` unset, which
+    is exactly the case the agent flow has to treat as "do not proceed".
+
+    Args:
+        request: The incoming request.
+
+    Returns:
+        The parsed payload, empty rather than raising when the body is
+        missing or unreadable. The endpoints already handle absent
+        arguments, and refusing the request outright is the worse failure.
+    """
+    body = await request.body()
+    if not body:
+        return RetellFunctionCall()
+
+    data: Any = None
+    if "form" in request.headers.get("content-type", ""):
+        data = dict(await request.form())
+    else:
+        try:
+            data = json.loads(body)
+        except ValueError:
+            data = dict(await request.form())
+
+    if not isinstance(data, dict):
+        return RetellFunctionCall()
+
+    # Form encoding flattens everything to strings, so a nested object
+    # arrives as its JSON text. Restore the two the model declares.
+    for key in ("args", "call"):
+        if isinstance(data.get(key), str):
+            try:
+                data[key] = json.loads(data[key])
+            except ValueError:
+                data.pop(key)
+        if key in data and not isinstance(data[key], dict):
+            data.pop(key)
+
+    return RetellFunctionCall(**data)
+
+
 def normalize_phone(raw: str) -> str | None:
     """Reduce a typed phone number to E.164, or reject it.
 
@@ -1150,7 +1198,7 @@ class RetellFunctionCall(BaseModel):
 
 
 @app.post("/api/verify-code")
-async def verify_code(payload: RetellFunctionCall) -> dict[str, Any]:
+async def verify_code(payload: RetellFunctionCall = Depends(retell_payload)) -> dict[str, Any]:
     """Validate a code and bind the SMS conversation to a participant.
 
     This is the sole opportunity to establish the linkage: inbound SMS
@@ -1183,7 +1231,7 @@ async def verify_code(payload: RetellFunctionCall) -> dict[str, Any]:
 
 
 @app.post("/api/complete")
-async def complete(payload: RetellFunctionCall) -> dict[str, Any]:
+async def complete(payload: RetellFunctionCall = Depends(retell_payload)) -> dict[str, Any]:
     """Mark a participant complete and return their completion link.
 
     Called by a Function node placed immediately before the End node, and
@@ -1226,7 +1274,7 @@ async def complete(payload: RetellFunctionCall) -> dict[str, Any]:
 
 
 @app.post("/api/attention-check")
-async def attention_check(payload: RetellFunctionCall) -> dict[str, Any]:
+async def attention_check(payload: RetellFunctionCall = Depends(retell_payload)) -> dict[str, Any]:
     """Record the outcome of a single attention check.
 
     Called by a Function node placed immediately after each check in the
