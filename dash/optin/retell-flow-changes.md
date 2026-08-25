@@ -140,7 +140,35 @@ never answered. Reorder so it reads sensibly either way:
 
     That code was not accepted. {{code_message}} Please text the five-character code shown on the study page. If you no longer have it, reopen the study link on Prolific to see it again.
 
-### 7. Silence timeout
+### 7. A fixed answer for HELP
+
+Typing HELP in the simulator produced this:
+
+    Child Mind Institute MATTER Lab: For help, email support@childmind.org. To continue, please text the five-character code shown on the study page.
+
+That address does not exist. Nothing in the flow, the site, the policies or
+the campaign mentions it: the model wrote it, because the global prompt says
+nothing about HELP and nothing about who to contact. Two problems, and the
+invented address is the smaller one — an improvised answer is different every
+time, and HELP is a keyword a carrier tests.
+
+The script appends a rule to the global prompt, matching the two verbatim
+rules already there:
+
+    Child Mind Institute MATTER Lab: DASH research study messages. Help: olivia.fitzpatrick@childmind.org. Msg & data rates may apply. Reply STOP to cancel.
+
+152 GSM-7 units, one segment, and it carries the brand, a real contact, the
+rates disclosure and the opt-out. The address comes from `CONTACT_EMAIL` in
+`study_site.py`, so it cannot drift from the one the pages publish.
+
+**Worth asking Retell:** whether the carrier answers HELP and STOP before the
+agent ever sees them. If it does, that response is configured on their side
+and this rule never fires — and the wording a carrier tests is theirs, not
+ours. If it does not, the agent is the only thing answering a keyword the
+carrier requires an answer to. Either way the rule is right; which one is
+live is a question for the open thread.
+
+### 8. Silence timeout
 
 `end_chat_after_silence_ms` is 86400000, twenty-four hours, and it now starts
 at the confirmation message rather than at the participant's first text.

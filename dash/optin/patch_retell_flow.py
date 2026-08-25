@@ -60,6 +60,22 @@ CODE_RETRY = (
 )
 SILENCE_MS = 259_200_000  # 72 hours; the timer starts at the confirmation.
 
+# HELP is a keyword a carrier tests, so its answer cannot be improvised. Left
+# to the model it invented an address that exists nowhere. Stated as a
+# verbatim rule in the global prompt, which is how this flow already pins its
+# other fixed answers. 152 GSM-7 units, one segment.
+HELP_REPLY = (
+    "Child Mind Institute MATTER Lab: DASH research study messages. "
+    f"Help: {site.CONTACT_EMAIL}. Msg & data rates may apply. "
+    "Reply STOP to cancel."
+)
+HELP_RULE = (
+    "\n## SMS keywords\n"
+    "If the participant sends HELP, or asks how to get help or who to "
+    f'contact, reply verbatim: "{HELP_REPLY}"\n'
+    "Never invent a contact address. This one and no other.\n"
+)
+
 # Retell stores a tool's response variables as text, and the endpoint answers
 # with a JSON boolean. Which spelling arrives is not documented, so accept
 # every plausible one. Anything else -- false, unset, a timed-out call --
@@ -181,6 +197,10 @@ def patch(data: dict) -> dict:
     # 7. The silence timer now runs from the confirmation, not from the
     # participant's first message.
     data["end_chat_after_silence_ms"] = SILENCE_MS
+
+    # 8. A fixed answer for HELP.
+    assert "HELP" not in flow["global_prompt"], "HELP rule already present?"
+    flow["global_prompt"] = flow["global_prompt"].rstrip("\n") + "\n" + HELP_RULE
 
     # Nothing else is attached or removed. Every other node that was
     # unreachable in the export stays unreachable here, including the three
