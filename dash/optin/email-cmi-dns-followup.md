@@ -36,6 +36,31 @@ A reviewer checking them today gets a 403. A blocked request against
 /sms-terms/ from a moment ago is `cf-ray a30c77636dee6e2f-EWR`, if a second example
 helps locate the rule.
 
+Four things that would help, none of which I asked last time:
+
+1. **Which Cloudflare feature is issuing the challenge — a WAF custom rule,
+   Bot Fight Mode, or Super Bot Fight Mode?** This may be the whole answer. As
+   I understand it, a custom rule with a Skip action can bypass Super Bot
+   Fight Mode but *not* plain Bot Fight Mode, which is a zone-level toggle
+   that runs on every request regardless of custom rules. If Bot Fight Mode is
+   what is on, no path-based exemption can work and it has to be switched off
+   for the zone.
+
+2. **Is the rule saved and deployed, rather than sitting as a draft?** Worth
+   thirty seconds to rule out.
+
+3. **Could you paste the DNS record exactly as it appears** — name, type,
+   content, proxy status? If there is a typo in the name field, that would
+   explain the NXDOMAIN better than anything I can see from outside.
+
+4. **When do you think you can get to this?** Not chasing — I ask because our
+   carrier registration is being reviewed now, and if the challenge cannot be
+   lifted quickly I would rather know, so we can decide whether to withdraw
+   and resubmit later rather than have it rejected a third time.
+
+If a path exemption turns out not to be possible, would setting the challenge
+to log-only for this zone until the review completes be an option?
+
 Thank you again for the quick turnaround on this.
 
 Arno
