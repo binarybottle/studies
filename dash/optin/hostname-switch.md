@@ -21,7 +21,7 @@ Five places name the host, and missing one fails quietly rather than loudly.
 
 ## 1. Caddyfile — add the new hostname
 
-Change the site block's first line to serve both names during the change:
+Already done in the repository; the site block serves both names:
 
 ```
 study.arnoklein.info, dash.studies.childmind.org {
@@ -84,6 +84,25 @@ https://dash.studies.childmind.org/start
 
 No query string; Prolific appends the identifiers itself. Submissions already
 in flight keep working because the old hostname still resolves.
+
+## Doing this while a campaign is under review
+
+Only one of the five steps touches anything the carrier can see. The
+application cites three URLs, all on matter.childmind.org — the opt-in page,
+the SMS terms, and the privacy notice — and no study-host URL at all. So
+steps 1, 2, 4 and 5 are invisible to a reviewer and can be done at any time.
+
+Step 3, republishing the opt-in page, edits a page that is cited and under
+review. Nothing a reviewer reads changes — the disclosure, the number, the
+unchecked box and the policy links are identical — the only difference is the
+address the form posts to. The argument for doing it anyway is that the
+address is currently a personal domain, and "the participant-facing site is
+not on an organization domain" is one of the reasons the campaign was
+rejected the first time. A reviewer who opens the page source sees it.
+
+Sequence it so the page is only ever republished against a hostname already
+proven to work: do 1, 2, 4 and 5, confirm the new host end to end, and
+republish the page last.
 
 ## Afterwards
 
