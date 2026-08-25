@@ -2,13 +2,22 @@
 
 Do this when the DNS record for `dash.studies.childmind.org` exists and
 resolves to 167.71.248.46. Check first, because Caddy cannot get a certificate
-before it does:
+before it does — and ask the zone's own nameservers, not a cached resolver:
 
 ```bash
-dig +short dash.studies.childmind.org      # expect 167.71.248.46
+dig +short dash.studies.childmind.org                      # expect 167.71.248.46
+dig +short @deb.ns.cloudflare.com dash.studies.childmind.org
+dig +short @deb.ns.cloudflare.com anything.studies.childmind.org   # proves the wildcard
 ```
 
-Four places name the host, and missing one fails quietly rather than loudly.
+**The answer must be 167.71.248.46 itself.** If it comes back as a Cloudflare
+address — 104.x or 172.67.x, which is what `matter.childmind.org` returns —
+the record is proxied, and two things follow: Caddy's HTTP validation cannot
+reach the server, so no certificate is issued, and the study site ends up
+behind the same bot challenge that hides the opt-in page from non-browsers.
+The record has to be DNS-only, grey cloud.
+
+Five places name the host, and missing one fails quietly rather than loudly.
 
 ## 1. Caddyfile — add the new hostname
 
@@ -52,7 +61,20 @@ Commit and push `matter-website`. Until this is done the published form still
 posts to the old hostname, which keeps working only while the Caddyfile serves
 both names.
 
-## 4. Prolific — the study URL
+## 4. Retell — the two tool URLs
+
+Both custom tools post to the study host and are configured in the Retell
+dashboard, not in either repository:
+
+- `verify_code` -> `https://dash.studies.childmind.org/api/verify-code`
+- `complete_study` -> `https://dash.studies.childmind.org/api/complete`
+
+They keep working on the old hostname while the Caddyfile serves both, so
+this is not urgent on the day — but a chat that cannot reach `verify_code`
+refuses to start the interview, by design, so leaving it undone eventually
+stops every session.
+
+## 5. Prolific — the study URL
 
 Change it to:
 
