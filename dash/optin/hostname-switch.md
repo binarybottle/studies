@@ -40,13 +40,10 @@ docker compose logs caddy | tail -20     # watch the certificate issue
 
 ## 2. The study site — where the opt-in form posts
 
-In `dash/.env` on the droplet:
-
-```
-OPTIN_API_URL=https://dash.studies.childmind.org/api/opt-in
-```
-
-Then `docker compose up -d dash`. No rebuild needed; it only re-reads the file.
+`OPTIN_API_URL` in `dash/study_site.py`. Nothing to do on the droplet: the
+constant is read only by the page generator, which runs on a laptop, so a
+value set in the server's `.env` would never be seen. Already changed in the
+repository to `https://dash.studies.childmind.org/api/opt-in`.
 
 ## 3. The opt-in page — regenerate and republish
 

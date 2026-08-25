@@ -112,10 +112,11 @@ OPTIN_PAGE_URL = os.environ.get(
     "OPTIN_PAGE_URL", "https://matter.childmind.org/studies/dash/opt-in/"
 )
 OPTIN_PAGE_ORIGIN = os.environ.get("OPTIN_PAGE_ORIGIN", "https://matter.childmind.org")
-# Where that page posts its form. Named here so the generated page and the
-# endpoint that answers it cannot disagree about the address.
+# Where that page posts its form. Read only by the page generator, which runs
+# on a laptop rather than on the server, so this default is the value that
+# matters -- setting it in the droplet's .env changes nothing.
 OPTIN_API_URL = os.environ.get(
-    "OPTIN_API_URL", "https://study.arnoklein.info/api/opt-in"
+    "OPTIN_API_URL", "https://dash.studies.childmind.org/api/opt-in"
 )
 
 # The exact checkbox wording. Stored verbatim with every consent, so it is
