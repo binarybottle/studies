@@ -48,7 +48,7 @@ python dash/optin/patch_retell_flow.py \
 
 `DASH-MH-P-GS TEXT (patched).json` is written and checked: the start node is
 the confirmation, the verification path is reachable, and the confirmation
-text matches `CONFIRMATION_SMS` in `study_site.py` byte for byte. Exactly one
+opens with `CONFIRMATION_SMS` from `study_site.py` byte for byte. Exactly one
 detached node is attached — Start, and with it the three code-verification
 nodes it leads into. Nothing is deleted, and every other detached node in the
 export stays detached. **Import it
@@ -73,10 +73,16 @@ A node named **Start** already exists carrying the confirmation text, but it
 is not wired in and would not send the text verbatim. Three things to fix:
 
 - Its instruction type is **prompt**, which lets the model rewrite it. Change
-  it to **static text**. The wording is registered with the carrier and has
-  to go out exactly as submitted:
+  it to **static text**. The first sentence is registered with the carrier
+  and has to go out exactly as submitted; the instruction after it saves a
+  round trip in which the participant replies to the confirmation with "hi"
+  and has to be asked again:
 
-      Child Mind Institute MATTER Lab: You are opted in to research study messages. Msg & data rates may apply. Msg freq varies. Reply STOP to cancel, HELP for help.
+      Child Mind Institute MATTER Lab: You are opted in to research study messages. Msg & data rates may apply. Msg freq varies. Reply STOP to cancel, HELP for help. To continue, text the five-character code shown on the study page.
+
+  That is 226 GSM-7 units, so two segments rather than one. The registered
+  sentence stays a verbatim prefix, which is what a reviewer comparing the
+  live message against the sample on file needs to see.
 
 - Its only edge has no destination. Point it at **Extract study code**, with
   the condition `When the participant sends any message`.
@@ -95,10 +101,13 @@ nothing. Point **Else** at a new node instead.
 
 Static text:
 
-    To begin, please text the five-character code shown on the study page.
+    To begin, please text the five-character code shown on the study page. If you no longer have it, reopen the study link on Prolific to see it again.
 
 Transition `When the participant sends a message` back to **Extract study
-code**.
+code**. The recovery instruction lives here rather than in the confirmation
+because this is where someone without a code actually lands, and because the
+opt-in page is public: a member of the public who opted in never had a
+Prolific link to reopen.
 
 Keep this separate from `Code not accepted`: that one is for a code the
 server rejected.

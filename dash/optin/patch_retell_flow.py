@@ -36,7 +36,21 @@ INTERVIEW_GREETING = (
     "persona you were given, as part of the DASH Mental Health Screener. "
     "Reply STOP at any time to end."
 )
-ASK_CODE = "To begin, please text the five-character code shown on the study page."
+# The registered confirmation, then what to do next. Keeping the registered
+# text as a verbatim prefix means the message a reviewer tests still opens
+# with the sample on file; the instruction that follows saves a round trip in
+# which the participant answers the confirmation with "hi" and is asked again.
+START_MESSAGE = (
+    site.CONFIRMATION_SMS
+    + " To continue, text the five-character code shown on the study page."
+)
+# Where someone who did not send a code lands, and so where the instructions
+# for recovering a lost one belong -- not in a message every participant gets.
+ASK_CODE = (
+    "To begin, please text the five-character code shown on the study page. "
+    "If you no longer have it, reopen the study link on Prolific to see it "
+    "again."
+)
 CODE_RETRY = (
     'Send verbatim: "That code was not accepted. {{code_message}} Please text '
     "the five-character code shown on the study page. If you no longer have "
@@ -86,7 +100,7 @@ def patch(data: dict) -> dict:
     # 1. Start node: the confirmation, sent verbatim, wired into the code path.
     start = node(flow, "node-1787629784000")
     assert start["instruction"]["type"] == "prompt", "Start already converted?"
-    start["instruction"] = {"type": "static_text", "text": site.CONFIRMATION_SMS}
+    start["instruction"] = {"type": "static_text", "text": START_MESSAGE}
     start["edges"] = [
         {
             "id": "e-start-to-code",
