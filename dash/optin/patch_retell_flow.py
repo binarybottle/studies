@@ -13,6 +13,11 @@ Import the result into Retell as a new version and diff it in the canvas
 before publishing. Every edit asserts what it expects to find first, so a
 flow that has moved on since the export fails here rather than silently
 producing something different.
+
+Exactly one previously detached node is attached: the Start node carrying the
+confirmation message, and with it the code-verification path it leads to.
+Everything else that was detached in the export is left exactly as it was,
+attached to nothing and deleting nothing.
 """
 
 from __future__ import annotations
@@ -163,18 +168,11 @@ def patch(data: dict) -> dict:
     # participant's first message.
     data["end_chat_after_silence_ms"] = SILENCE_MS
 
-    # Feedback question fb05 was skipped: the chain ran fb04 -> fb06, and the
-    # extract that follows fb05 had an edge with no destination.
-    node(flow, "node-1781658556125")["edges"][0]["destination_node_id"] = (
-        "node-1781658715699"
-    )
-    node(flow, "node-1781658882071")["edges"][0]["destination_node_id"] = (
-        "node-1781658944572"
-    )
-
-    # Three empty nodes nothing points at, each with a dangling edge.
-    junk = {"node-1776965282383", "node-1787226863223", "node-1787629781395"}
-    flow["nodes"] = [n for n in flow["nodes"] if n["id"] not in junk]
+    # Nothing else is attached or removed. Every other node that was
+    # unreachable in the export stays unreachable here, including the three
+    # empty ones and the skipped feedback question: what to do with them is a
+    # decision about the study, and a node left detached changes nothing,
+    # while a node wired in changes what participants are asked.
     return data
 
 

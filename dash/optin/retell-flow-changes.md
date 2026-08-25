@@ -48,7 +48,10 @@ python dash/optin/patch_retell_flow.py \
 
 `DASH-MH-P-GS TEXT (patched).json` is written and checked: the start node is
 the confirmation, the verification path is reachable, and the confirmation
-text matches `CONFIRMATION_SMS` in `study_site.py` byte for byte. **Import it
+text matches `CONFIRMATION_SMS` in `study_site.py` byte for byte. Exactly one
+detached node is attached — Start, and with it the three code-verification
+nodes it leads into. Nothing is deleted, and every other detached node in the
+export stays detached. **Import it
 into Retell as a new version and diff it in the canvas before publishing** —
 the script has been run against the export, not against Retell's importer,
 and how that importer treats an export with an empty `agent_id` is not
@@ -186,23 +189,26 @@ study opens.
 
 None of this blocks the campaign; all of it affects data.
 
-- **Q181 fb05, "How trustworthy did you feel the AI agent was?", was
-  unreachable** — the feedback chain ran fb04 -> fb06, and its extract node
-  had an edge with no destination, so the question would have dead-ended even
-  if reached. The script splices it back in between fb04 and fb06, which is
-  plainly where it belongs; nothing else about the battery changes.
-- Two empty **Code** nodes and one empty **Subagent** node, all unreachable,
-  all with dangling edges. The script deletes them.
+The script changes none of it. Attaching a detached node changes what
+participants are asked; leaving it detached changes nothing. Each of these is
+a decision about the study rather than a repair, so each is listed and left
+alone.
 
-Three things the script deliberately leaves alone, because each needs a
-decision about the questionnaire rather than a repair:
-
+- **Q181 fb05, "How trustworthy did you feel the AI agent was?", is
+  unreachable.** The feedback chain runs fb04 -> fb06, and the extract node
+  after fb05 has an edge with no destination, so the question would dead-end
+  even if reached. Wiring it in means participants answer one more question;
+  leaving it means that item is empty in the data. Both are defensible and
+  neither is mine to pick.
 - **Q102 dpscr097 ("What is it?") is unreachable and dead-ends.** It reads
   like a follow-up to Q101, but where it belongs is a research call.
 - **Preamble: Service Use is unreachable** and its skip edge has no
   destination. Its questions are asked; only the preamble is orphaned.
 - **Q177 fb01** has a Skip/Next Question edge with no destination. Whether
   skipping a feedback item should be allowed at all is your call.
+- Two empty **Code** nodes and one empty **Subagent** node, unreachable, each
+  with a dangling edge. Harmless where they are; delete them in the canvas if
+  you want the tidier picture.
 
 ## For the campaign application, if TCR comes back
 
