@@ -550,8 +550,20 @@ def record_optin(
     Example:
         >>> import tempfile, os
         >>> init_db(os.path.join(tempfile.mkdtemp(), "d.db"))
-        >>> record_optin("+15551230000", "I agree...", "sent") > 0
+        >>> wording = "I agree to receive text messages. Reply STOP to cancel."
+        >>> row_id = record_optin("+15551230000", wording, "sent")
+        >>> row_id > 0
         True
+        >>> stored = connection().execute(
+        ...     "SELECT phone_hash, disclosure FROM sms_optins WHERE id = ?",
+        ...     (row_id,)
+        ... ).fetchone()
+        >>> stored["disclosure"] == wording
+        True
+        >>> stored["phone_hash"] == hash_phone("+15551230000")
+        True
+        >>> "+15551230000" in stored["phone_hash"]
+        False
     """
     with _write_lock:
         cursor = connection().execute(

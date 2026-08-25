@@ -98,7 +98,7 @@ DURATION_TEXT = "30 to 60 minutes"
 # The name on the A2P campaign application. A reviewer opening the opt-in
 # URL matches what they read against the campaign in front of them, so the
 # page has to call the program what the application calls it.
-PROGRAM_NAME = "DASH text-message interviewer pilot"
+PROGRAM_NAME = "Child Mind Institute MATTER Lab"
 
 # The public opt-in page, hosted on the organization's own CMS. It posts here
 # from the browser, so its origin is the one allowed to call /api/opt-in.
@@ -123,15 +123,14 @@ OPTIN_API_URL = os.environ.get(
 # notice; the organization-wide policy is a general document that does not
 # mention messaging at all.
 OPTIN_DISCLOSURE = (
-    "I agree to receive SMS from Child Mind Institute for the DASH "
-    "text-message interview pilot. Message and data rates may apply. "
-    "Message frequency varies (approximately 100-200 messages per session). "
-    "Reply STOP to cancel or HELP for help. "
-    f"Privacy: {SMS_PRIVACY_URL} Terms: {SMS_TERMS_URL}"
+    "I agree to receive text messages from the Child Mind Institute MATTER "
+    "Lab at this number. Msg & data rates may apply. Msg freq varies. "
+    "Reply STOP to cancel, HELP for help."
 )
 CONFIRMATION_SMS = (
-    "Child Mind Institute: You are opted in for the DASH pilot. Msg & data "
-    "rates may apply. Msg freq varies. Reply STOP to cancel, HELP for help."
+    "Child Mind Institute MATTER Lab: You are opted in to research study "
+    "messages. Msg & data rates may apply. Msg freq varies. "
+    "Reply STOP to cancel, HELP for help."
 )
 
 # Outbound send. No credentials ship with this repo: the provider endpoint is

@@ -45,15 +45,16 @@ redirect_from:
   Regenerate from the study repository:
     python dash/optin/build_optin_page.py ~/Software/matter-website/opt-in.html
 
-  The form posts to {api}, which is a different origin. That endpoint
-  allows exactly one origin: {origin}. If this page moves to another
-  host, set OPTIN_PAGE_ORIGIN in the study site's .env to match, or the
-  browser will block every submission.
+  The form posts cross-origin to the study host. That endpoint allows
+  exactly one origin: {origin}. If this page moves to another host, set
+  OPTIN_PAGE_ORIGIN in the study site's .env to match, or the browser
+  will block every submission.
 -->
 
 <h1>{program}</h1>
-<p>A messaging program of {lab}. {org} is a nonprofit children's mental health
-organization.</p>
+<p>{org} is a nonprofit children's mental health organization. This page is
+where participants in our research studies opt in to receive text messages
+from us.</p>
 
 <h2>Messages in this program come from</h2>
 <p style="font-size:1.5em; font-weight:bold; margin:0.5em 0;">
@@ -82,22 +83,21 @@ anything first.</p>
 </form>
 
 <p>The box above is not ticked for you, and nothing is sent unless you tick it.
-When you opt in we send one confirmation text. The interview itself begins when
-you text {number} yourself. Opting in is not required to read this page, and
-consenting to receive text messages is not a condition of any purchase or of
-taking part in any other {org} activity.</p>
+When you opt in we send one confirmation text. The conversation itself begins
+when you text {number} yourself. Opting in is not required to read this page,
+and consenting to receive text messages is not a condition of any purchase or
+of taking part in any other {org} activity.</p>
 
 <h2>What the program is</h2>
-<p>{org} is testing an automated text-message interviewer. This is a pilot test
-of the software rather than a research study: its purpose is to confirm that
-the system works reliably before any research data is collected. It is
-preparation for a research study that has not yet begun, and for which {org}
-will apply for review by an Institutional Review Board.</p>
-<p>Testers are recruited through the Prolific research platform. Each tester is
-given a short written persona describing a fictional parent and a fictional
-child, and answers a standardized mental health screening questionnaire in
-character as that fictional parent. No tester is asked about their own child,
-their own family, or their own mental health.</p>
+<p>An automated interviewer conducts a standardized questionnaire by text
+message. Messages consist of questionnaire items and replies to what you send.
+No marketing or promotional messages are ever sent from this number.</p>
+<p>The current program is a pilot test of that messaging system, run in
+preparation for a research study that has not yet begun and for which {org}
+will apply for review by an Institutional Review Board. Each participant is
+given a short written persona describing a fictional parent and child, and
+answers the questionnaire in character. No participant is asked about their
+own child or their own mental health.</p>
 
 <h2>Messaging terms</h2>
 <ul>
@@ -121,8 +121,8 @@ to an irreversible cryptographic hash; the number itself is not kept. To
 request deletion of your records, email {email_display}.</p>
 
 <p class="text-muted">Questions: {email_display} &middot;
-<a href="/sms-privacy/">SMS privacy notice</a> &middot;
-<a href="/sms-terms/">SMS terms and conditions</a> &middot;
+<a href="{sms_privacy}">SMS privacy notice</a> &middot;
+<a href="{sms_terms}">SMS terms and conditions</a> &middot;
 <a href="https://childmind.org/privacy/">Organization privacy policy</a> &middot;
 <a href="https://childmind.org/terms/">Organization terms of use</a></p>
 
@@ -160,9 +160,10 @@ def build() -> str:
     """
     return TEMPLATE.format(
         program=html.escape(site.PROGRAM_NAME),
-        lab=html.escape(site.LAB_NAME),
         org=html.escape(site.ORG_NAME),
         number=html.escape(site.STUDY_SMS_NUMBER),
+        sms_privacy=site.SMS_PRIVACY_URL,
+        sms_terms=site.SMS_TERMS_URL,
         duration=html.escape(site.DURATION_TEXT),
         disclosure=html.escape(site.OPTIN_DISCLOSURE),
         # The site writes addresses this way to keep them out of scrapers.
