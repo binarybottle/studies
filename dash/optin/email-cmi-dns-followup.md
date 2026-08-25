@@ -1,47 +1,88 @@
-# Reply to Child Mind Institute IT — the record is not resolving
+# Reply to Child Mind Institute IT — neither change is visible yet
 
-**Subject:** Re: DNS record — not resolving yet, and one thing to check
+**Subject:** Re: DNS and Cloudflare — neither is visible from outside, and the certificate is fine
 
-Hi, and thank you for turning this around quickly.
+Hi, and thank you for turning these around.
 
-It is not resolving yet, and I do not think it is propagation: the zone's own
-authoritative nameservers do not have the record. Asking them directly, with
-no caching in between:
+Neither change is reaching us yet. Details below, including one check run from
+the droplet itself, since that is where you suggested testing.
 
-    $ dig +norecurse @deb.ns.cloudflare.com dash.studies.childmind.org A
+**DNS: the record is not in the published zone**
+
+Not a caching problem. Both the authoritative server and a public resolver
+return nothing:
+
+    $ dig +short @deb.ns.cloudflare.com dash.studies.childmind.org A
+    (no answer)
+
+    $ dig +short @1.1.1.1 dash.studies.childmind.org A
+    (no answer)
+
+    $ dig dash.studies.childmind.org
     status: NXDOMAIN
 
-    $ dig +norecurse @deb.ns.cloudflare.com '*.studies.childmind.org' A
-    status: NXDOMAIN
+A control in the same zone on the same server answers normally, so the zone
+itself is fine:
 
-    $ dig +norecurse @deb.ns.cloudflare.com studies.childmind.org A
-    status: NXDOMAIN
+    $ dig +short @deb.ns.cloudflare.com matter.childmind.org A
+    104.26.7.10
 
-A control on the same server, in the same zone, answers normally:
+Could you confirm the record is saved in the childmind.org Cloudflare zone as
+`*.studies` A `167.71.248.46`, **DNS-only, grey cloud**? It has to be
+unproxied: the droplet obtains its own TLS certificates by HTTP validation,
+and a proxied record prevents that, leaving the hostname with no working
+certificate at all.
 
-    $ dig +norecurse @deb.ns.cloudflare.com matter.childmind.org A
-    status: NOERROR    104.26.7.10
+**Cloudflare: the challenge still fires, including from the droplet**
 
-childmind.org is served by deb.ns.cloudflare.com and julian.ns.cloudflare.com,
-and both return NXDOMAIN for all three names. Could you check that the record
-landed in that Cloudflare zone specifically? The usual causes are a record
-saved in a different zone or account, or a `studies.childmind.org` zone
-created without NS records delegating it from `childmind.org`.
+From a residential connection every path we depend on returns 403 with
+`cf-mitigated: challenge`:
 
-**One thing worth confirming while you are in there.** The control above shows
-matter.childmind.org resolving to a Cloudflare address rather than to its
-origin, so records in this zone are proxied by default. The wildcard needs to
-be **DNS-only, grey cloud**, resolving to 167.71.248.46 itself. Proxied, two
-things break: our server cannot complete the HTTP validation that issues its
-TLS certificate, so the hostname would have no working certificate at all; and
-the participant-facing site ends up behind the same bot challenge that
-currently makes matter.childmind.org return 403 to anything that is not a
-browser — which is the other request in my earlier email.
+    /studies/dash/opt-in/    403  challenge
+    /sms-terms/              403  challenge
+    /sms-privacy/            403  challenge
+    /                        403  challenge
 
-Once it is in, this confirms it from anywhere:
+And the same three from the droplet you suggested testing from
+(167.71.248.46), over SSH:
 
-    dig +short dash.studies.childmind.org          # expect 167.71.248.46
-    dig +short anything.studies.childmind.org      # same, proving the wildcard
+    /studies/dash/opt-in/    403
+    /sms-terms/              403
+    /                        403
+
+So this is not our network, and not an address you could allowlist your way
+around — the rule does not appear to be matching these paths at all. Could you
+share the rule expression? A recent blocked request is `cf-ray a30c6d230c962142-EWR`,
+which should locate it in the security log.
+
+What we need is a match on **URI path** — starting with `/studies/`,
+`/sms-terms/`, `/sms-privacy/` — with **no source-IP condition**, since the
+carrier's reviewer fetches from an address nobody can predict.
+
+This one is time-sensitive in a way the DNS record is not. Our A2P campaign is
+under review now, and `matter.childmind.org/sms-privacy/` and
+`/sms-terms/` are the two URLs filed in the application, with
+`/studies/dash/opt-in/` cited in the consent field. All three currently
+return 403 to anything that is not a browser.
+
+**Certificate: nothing to change, please leave it as it is**
+
+The certificate served for matter.childmind.org is valid from outside CMI:
+
+    subject  CN=childmind.org
+    SAN      childmind.org, *.childmind.org
+    issuer   Google Trust Services WE1
+    valid    12 Jul 2026 - 10 Oct 2026
+
+`*.childmind.org` covers matter.childmind.org, and the chain verifies without
+overrides — `curl` completes the handshake with no certificate error and no
+`-k`. There is no GitHub-domain certificate being presented to visitors and no
+browser warning that we can reproduce.
+
+Cloudflare is also already proxying the site — that is what makes the managed
+challenge possible in the first place — so the reverse proxy in your note is
+in place rather than something to add. I would rather not change anything
+there while a carrier review is open.
 
 Thanks again,
 

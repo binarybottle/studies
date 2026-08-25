@@ -105,8 +105,8 @@ published under it should be worded as if DASH were the only one.
 | --- | --- | --- |
 | Twilio, via Retell | Whether the confirmation SMS must precede the participant's first inbound message | If not, the opt-in form drops the phone number field and goes back to a checkbox alone, restoring the property that a number only ever reaches us because someone texted us. Retell is opening a support ticket rather than guessing. |
 | Retell | Three questions about their `create-sms-chat` endpoint | See "traps" below |
-| CMI IT | DNS record `*.studies.childmind.org` → 167.71.248.46 | The study site is on a personal domain, which is part of why the campaign was rejected. Email sent. |
-| CMI IT | Cloudflare bot-challenge exemption for `/studies/*` on matter.childmind.org | A reviewer's automated checker currently gets a 403 challenge page instead of the opt-in disclosures. Same email. |
+| CMI IT | DNS record `*.studies.childmind.org` → 167.71.248.46 | Reported deployed on 25 Aug 2026, but NXDOMAIN at the zone's own authoritative nameservers and at 1.1.1.1, so it is not in the published zone. Must be DNS-only, grey cloud: the droplet issues its own certificates by HTTP validation. |
+| CMI IT | Cloudflare bot-challenge exemption on matter.childmind.org | Still firing as of 25 Aug 2026, from a residential connection and from the droplet alike: `/studies/dash/opt-in/`, `/sms-terms/`, `/sms-privacy/` and `/` all return 403 with `cf-mitigated: challenge`. Two of those are the URLs filed in the campaign, which is under review now. |
 | TCR | Campaign approval | No SMS can be sent at all until this lands, including the confirmation message. |
 
 ## What is left to do
