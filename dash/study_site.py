@@ -173,10 +173,16 @@ SMS_ENABLED = os.environ.get("SMS_ENABLED", "").strip().lower() in {"1", "true",
 # the SMS confirmation, so a text conversation is unchanged whether we start
 # it or the participant does. A browser conversation passes this instead:
 # nobody has opted in to anything, and there is no code to ask for.
+#
+# It ends with the question the SMS path reaches two nodes later, because the
+# first node's edges are evaluated on the participant's first reply either
+# way. That keeps both channels the same shape -- speak, listen, branch --
+# rather than making the browser send a throwaway message to get going.
 WEB_OPENING = (
     "Hello! I am an AI assistant from the Child Mind Institute MATTER Lab. "
     "I am going to ask some questions about the child described in the "
-    "persona you were given, as part of the DASH Mental Health Screener."
+    "persona you were given, as part of the DASH Mental Health Screener. "
+    "Shall we begin? Please reply yes or no."
 )
 SMS_SEND_URL = os.environ.get(
     "SMS_SEND_URL", "https://api.retellai.com/create-sms-chat"
@@ -1650,7 +1656,7 @@ async def chat_start(payload: ChatStart) -> dict[str, Any]:
             "agent_id": RETELL_AGENT_ID,
             "metadata": {"prolific_pid": participant.pid},
             "retell_llm_dynamic_variables": {
-                "channel": "web",
+                "study_channel": "web",
                 "opening": WEB_OPENING,
                 "prolific_pid": participant.pid,
             },
