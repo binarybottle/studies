@@ -962,14 +962,9 @@ async def chat_page(pid: str) -> HTMLResponse:
                 "your Prolific ID and we will sort out your payment.");
               return;
             }}
-            // A resumed conversation with nothing in it, or one whose last
-            // word was the participant's, leaves nobody waiting on anybody.
-            // Say so rather than showing an empty box.
-            const last = (started.history || []).slice(-1)[0];
-            if (started.resumed && (!last || last.who === "you")) {{
-              show("agent",
-                "Picking up where you left off. Send anything to continue.");
-            }}
+            // Whatever the participant is actually being asked, put it back
+            // at the bottom where they are looking.
+            if (started.repeat) show("agent", started.repeat);
             enable(true);
           }} catch (error) {{
             status.textContent = error.message +
@@ -1561,6 +1556,45 @@ def conversation_so_far(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
     return shown
 
 
+def question_to_repeat(
+    history: list[dict[str, str]], opening: str
+) -> str | None:
+    """Work out what the participant is being asked, on returning.
+
+    Someone who reopens the interview lands at the bottom of the transcript,
+    which is their own last message whenever the agent's reply went missing.
+    Rather than inviting them to type anything, put the question back in
+    front of them: the agent's own words if it has said any, and the opening
+    it should have sent if the conversation is empty.
+
+    Args:
+        history: The conversation so far, oldest first.
+        opening: What this application asked the agent to open with.
+
+    Returns:
+        The question to show again, or None when the agent already has the
+        last word and nothing needs repeating.
+
+    Example:
+        >>> question_to_repeat([{"who": "agent", "text": "Shall we begin?"},
+        ...                     {"who": "you", "text": "yes"}], "Hello?")
+        'Shall we begin?'
+        >>> question_to_repeat([{"who": "agent", "text": "Shall we begin?"}],
+        ...                    "Hello?") is None
+        True
+        >>> question_to_repeat([], "Hello?")
+        'Hello?'
+    """
+    if not history:
+        return opening or None
+    if history[-1]["who"] == "agent":
+        return None
+    for message in reversed(history):
+        if message["who"] == "agent":
+            return message["text"]
+    return opening or None
+
+
 async def retell_get(url: str) -> dict[str, Any]:
     """Read from Retell and return the parsed body.
 
@@ -1642,10 +1676,12 @@ async def chat_start(payload: ChatStart) -> dict[str, Any]:
         # history the participant is returned to an empty page with a text
         # box and no question, which is worse than never having left.
         existing = await retell_get(f"{RETELL_GET_CHAT_URL}/{participant.chat_id}")
+        history = conversation_so_far(existing.get("message_with_tool_calls") or [])
         return {
             "chat_id": participant.chat_id,
-            "history": conversation_so_far(existing.get("message_with_tool_calls") or []),
+            "history": history,
             "messages": [],
+            "repeat": question_to_repeat(history, WEB_OPENING),
             "resumed": True,
             "ended": existing.get("chat_status") == "ended",
         }
@@ -1668,10 +1704,14 @@ async def chat_start(payload: ChatStart) -> dict[str, Any]:
 
     store.set_channel(participant.pid, "web")
     store.bind_chat(participant.pid, chat_id)
+    messages = agent_replies(created.get("message_with_tool_calls") or [])
     return {
         "chat_id": chat_id,
         "history": [],
-        "messages": agent_replies(created.get("message_with_tool_calls") or []),
+        "messages": messages,
+        # A new chat that says nothing has not asked anything either. Show
+        # the opening rather than an empty page with a text box.
+        "repeat": None if messages else WEB_OPENING,
         "resumed": False,
         "ended": False,
     }
