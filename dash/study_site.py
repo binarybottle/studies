@@ -168,6 +168,16 @@ RETELL_GET_CHAT_URL = "https://api.retellai.com/get-chat"
 # offer a path that silently fails. Set SMS_ENABLED=1 on the day approval
 # lands; nothing else changes.
 SMS_ENABLED = os.environ.get("SMS_ENABLED", "").strip().lower() in {"1", "true", "yes"}
+
+# The flow's first node sends {{opening}}. Its default, set in the flow, is
+# the SMS confirmation, so a text conversation is unchanged whether we start
+# it or the participant does. A browser conversation passes this instead:
+# nobody has opted in to anything, and there is no code to ask for.
+WEB_OPENING = (
+    "Hello! I am an AI assistant from the Child Mind Institute MATTER Lab. "
+    "I am going to ask some questions about the child described in the "
+    "persona you were given, as part of the DASH Mental Health Screener."
+)
 SMS_SEND_URL = os.environ.get(
     "SMS_SEND_URL", "https://api.retellai.com/create-sms-chat"
 )
@@ -1641,6 +1651,7 @@ async def chat_start(payload: ChatStart) -> dict[str, Any]:
             "metadata": {"prolific_pid": participant.pid},
             "retell_llm_dynamic_variables": {
                 "channel": "web",
+                "opening": WEB_OPENING,
                 "prolific_pid": participant.pid,
             },
         },
