@@ -193,6 +193,20 @@ would have answered 422, left `code_valid` unset, and — under the old wiring
 either way, flat or nested under `args`, including a `call` object arriving
 as a JSON string. Whatever the dashboard is set to, the call lands.
 
+**Retell confirmed all three open questions on 25 August 2026**, and the
+answers match what this file already prescribes. `text` in the
+`create-sms-chat` payload is ignored outright — the first outbound message is
+always the bound agent's begin message, which for a conversation flow is its
+start node, so step 1 is not merely advisable but the only thing that decides
+what participants receive. The participant's reply lands in the chat that call
+opened rather than a new one, which is what makes step 4's gate reachable at
+all. And no timer starts at chat creation, but the auto-close clock runs from
+the last message either way — the confirmation — resetting on every inbound,
+so step 8's 72 hours is what covers someone who opts in at night and texts
+back in the morning. Retell recommended the conversation-flow gate over a
+prompt rule for exactly the reason step 4 gives: conditional edges are
+deterministic, a prompt is something the model has to remember.
+
 **`{{code_valid}} == true` is the one thing to watch.** The endpoint answers
 with a JSON boolean and Retell stores response variables as text; which
 spelling arrives is not documented. The success edge therefore matches

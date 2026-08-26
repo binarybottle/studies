@@ -104,7 +104,7 @@ published under it should be worded as if DASH were the only one.
 | Waiting on | What | Why it matters |
 | --- | --- | --- |
 | Twilio, via Retell | Whether the confirmation SMS must precede the participant's first inbound message | If not, the opt-in form drops the phone number field and goes back to a checkbox alone, restoring the property that a number only ever reaches us because someone texted us. Retell is opening a support ticket rather than guessing. |
-| Retell | Three questions about their `create-sms-chat` endpoint | See "traps" below |
+| — | Three questions about `create-sms-chat` | **Answered 25 Aug 2026.** `text` is ignored, the agent's begin message decides; the participant's reply lands in the chat that call opened; no timer starts at creation, but auto-close runs from the last message, which is the confirmation. All three match the patched flow. |
 | — | DNS record `*.studies.childmind.org` → 167.71.248.46 | **Done, 25 Aug 2026.** Resolves at the authoritative nameservers and at 1.1.1.1, wildcard confirmed, grey cloud. The hostname switch is now ours to do: see `dash/optin/hostname-switch.md`. |
 | CMI IT | Cloudflare bot-challenge exemption on matter.childmind.org | Still firing. The challenge is Super Bot Fight Mode on "definitely automated traffic". A skip rule exists and matches, but skips managed rules and rate limiting rather than SBFM, which is its own checkbox; and its expression covers `/studies/` only, missing `/sms-terms/` and `/sms-privacy/` — the two URLs filed in a campaign that is under review now. |
 | TCR | Campaign approval | No SMS can be sent at all until this lands, including the confirmation message. |
@@ -130,7 +130,15 @@ Owned by us, in order:
 7. **When DNS lands:** switch hostnames. A runbook exists; four places name
    the host and three fail quietly if missed.
 
-## The agent flow does not link conversations yet
+## The agent flow, as of 25 August 2026
+
+The patched flow is imported: the start node is the confirmation, the
+verification path is reachable, HELP has a fixed answer and auto-close is 72
+hours. **Check that the version is published** — the export reads
+`is_published: false`, which for a draft version means the live number may
+still be answering with the old flow.
+
+## What the agent flow used to do
 
 The exported Retell flow reaches 412 of its 423 nodes from the start node.
 `Extract study code`, `Verify code` and `Code not accepted` are among the

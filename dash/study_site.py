@@ -962,18 +962,25 @@ async def send_confirmation_sms(number: str) -> str:
     """Send the opt-in confirmation message.
 
     Posts to Retell's ``create-sms-chat``, which opens an outbound-initiated
-    SMS chat from the study number. Two consequences are worth knowing:
+    SMS chat from the study number. Three things Retell confirmed on 25
+    August 2026, none of them guesses any more:
 
-    The first message is authored by the agent bound to the study number,
-    not necessarily by the ``text`` sent here. For the message to match the
-    wording registered with the campaign, that agent's begin message has to
-    be the confirmation text.
+    The ``text`` below is **ignored**. The first outbound message is always
+    the begin message of the agent bound to ``from_number``, which for a
+    conversation flow is its start node. It is sent regardless so the
+    payload records what the message is meant to say, and both come from
+    ``CONFIRMATION_SMS``, so the two cannot disagree.
 
-    Because it opens a chat rather than sending a bare message, the
-    conversation the participant later texts into is this one. That is
-    convenient — the code they send arrives in an existing chat — but it
-    also means the agent's silence timers start at opt-in rather than at
-    the participant's first message.
+    The participant's later reply lands in this same chat rather than
+    opening a new one, keyed to the conversation already open on the DID.
+    That is what makes the code they text arrive where the verification
+    node is waiting for it.
+
+    No timer starts when the chat is created, but the auto-close clock runs
+    from the last message in either direction, which at that point is the
+    confirmation, and it resets on every inbound message. Someone who opts
+    in on a laptop and texts back the next morning is inside the window
+    only because the flow sets it to 72 hours.
 
     Args:
         number: E.164 destination.

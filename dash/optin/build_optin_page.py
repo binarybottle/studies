@@ -29,7 +29,21 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-import study_site as site  # noqa: E402
+try:
+    import study_site as site  # noqa: E402
+except ModuleNotFoundError as error:  # pragma: no cover - operator guidance
+    raise SystemExit(
+        f"Cannot import the study site ({error.name} is missing).\n"
+        "\n"
+        "This script runs on your own machine, not on the droplet. The server\n"
+        "installs the application's dependencies inside the container, and it\n"
+        "has no checkout of the website repository to write the page into.\n"
+        "\n"
+        "If the prompt says arno@ubuntu-..., type exit first, then:\n"
+        "    cd ~/Software/studies\n"
+        "    python3 dash/optin/build_optin_page.py \\\n"
+        "        ~/Software/matter-website/opt-in.html"
+    ) from error
 
 TEMPLATE = """---
 layout: page
