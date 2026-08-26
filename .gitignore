@@ -1,6 +1,7 @@
 .env
 __pycache__
 backups/
+*.log
 study.db
 study.db-wal
 study.db-shm
