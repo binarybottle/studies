@@ -153,7 +153,12 @@ CONFIRMATION_SMS = (
 # sending, but leaving it unset is the normal configuration -- two names for
 # one secret is how one of them ends up stale.
 RETELL_API_KEY = os.environ.get("RETELL_API_KEY", "")
-RETELL_AGENT_ID = os.environ.get("RETELL_AGENT_ID", "")
+# Not a secret: an agent id is useless without the key, and this repository
+# holds one study, whose agent this is. Defaulting it means one fewer blank
+# to fill in on a server, and one fewer way for a deploy to come up mute.
+RETELL_AGENT_ID = os.environ.get(
+    "RETELL_AGENT_ID", "agent_ffd9f3ee004a2f91bd92bbc378"
+)
 RETELL_CHAT_URL = "https://api.retellai.com/create-chat"
 RETELL_CHAT_COMPLETION_URL = "https://api.retellai.com/create-chat-completion"
 
