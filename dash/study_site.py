@@ -144,8 +144,16 @@ CONFIRMATION_SMS = (
 # whatever Retell exposes for sending from the study number, and until it is
 # configured the endpoint records consent and reports that the confirmation
 # was not sent rather than pretending it was.
-SMS_SEND_URL = os.environ.get("SMS_SEND_URL", "")
-SMS_SEND_TOKEN = os.environ.get("SMS_SEND_TOKEN", "")
+# One credential for everything Retell: the dashboard API key. SMS_SEND_TOKEN
+# is kept as an override for the case where a separate key is ever issued for
+# sending, but leaving it unset is the normal configuration -- two names for
+# one secret is how one of them ends up stale.
+RETELL_API_KEY = os.environ.get("RETELL_API_KEY", "")
+RETELL_AGENT_ID = os.environ.get("RETELL_AGENT_ID", "")
+SMS_SEND_URL = os.environ.get(
+    "SMS_SEND_URL", "https://api.retellai.com/create-sms-chat"
+)
+SMS_SEND_TOKEN = os.environ.get("SMS_SEND_TOKEN", "") or RETELL_API_KEY
 
 # An endpoint that texts whatever number is posted to it is a way to text
 # strangers. These caps are per rolling day.
@@ -1011,7 +1019,7 @@ async def send_confirmation_sms(number: str) -> str:
         is approved, so ``"sent"`` means the provider accepted it, not that
         it was delivered.
     """
-    if not SMS_SEND_URL:
+    if not SMS_SEND_URL or not SMS_SEND_TOKEN:
         store.log_event("confirmation_unconfigured")
         return "unconfigured"
     # The study number is configured in a human-readable form for display.
