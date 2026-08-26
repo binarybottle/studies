@@ -137,18 +137,19 @@ HTTP-01 challenge.
 
 ## 4. First upload
 
-From this directory on your laptop:
+The droplet gets its own checkout of this repository. On the droplet:
 
 ```bash
-ssh arno@DROPLET_IP 'mkdir -p ~/studies/dash'
-scp compose.yml Caddyfile backup.sh arno@DROPLET_IP:~/studies/
-scp dash/Dockerfile dash/requirements.txt dash/*.py arno@DROPLET_IP:~/studies/dash/
+git clone git@github.com:binarybottle/studies.git ~/studies
 ```
 
-Naming the files rather than globbing `dash/*` keeps `optin/` on the laptop,
-where it belongs — it is campaign paperwork, not application code — and avoids
-`scp` complaining about a directory. For every later upload use the deploy
-command in [Part 2](#part-2--rebuild-and-deploy), which excludes `.env`.
+That needs a key the droplet can authenticate with. Either add its public key
+as a deploy key on the repository, or use HTTPS if the repository is public.
+
+Nothing is copied up by hand, then or later: deployment is `git pull` plus a
+rebuild, described in [Part 2](#part-2--rebuild-and-deploy). `.env` is created
+directly on the droplet in the next step and never leaves it — it is in
+`.gitignore`, so no push or pull can carry it in either direction.
 
 ## 5. Configure
 
@@ -221,29 +222,46 @@ See [Backups](#backups) in Part 3. Do this before the study opens, not after.
 
 # Part 2 — Rebuild and deploy
 
-The everyday loop: edit on the laptop, upload, rebuild the `dash` service.
-Caddy and its certificates are never touched.
+The everyday loop: edit on the laptop, push, pull on the droplet, rebuild the
+`dash` service. Caddy and its certificates are never touched.
 
 ## Deploy
 
-From this directory on your laptop:
+Commit and push from the laptop, then:
 
 ```bash
-DROPLET=arno@167.71.248.46
-
-rsync -av --exclude '.env' --exclude '__pycache__' --exclude 'optin' \
-    dash/ "$DROPLET":~/studies/dash/
-scp compose.yml Caddyfile backup.sh "$DROPLET":~/studies/
-ssh "$DROPLET" 'cd ~/studies && docker compose up -d --build dash'
+ssh arno@167.71.248.46 'cd ~/studies && git pull && docker compose up -d --build dash'
 ```
 
-The `--exclude '.env'` is the part that matters. The droplet's `.env` holds
-the real `PHONE_HASH_SALT`; overwriting it with the template silently breaks
-repeat-handset detection for every participant after that point, and the
-original salt is not recoverable. `rsync` also skips unchanged files, so a
-one-line edit uploads one file.
+That is the whole deployment. The droplet is a checkout of this repository,
+so `git pull` brings the application, `compose.yml`, `Caddyfile` and
+`backup.sh` in one step, and `git rev-parse HEAD` there answers exactly what
+is running.
 
-Save the block as `deploy.sh` if you prefer, but keep the exclude.
+**`.env` is never at risk.** It is listed in `.gitignore`, so it is not in
+the repository and `git pull` cannot touch it. This is the reason to prefer
+pulling over copying files up: the droplet's `.env` holds the real
+`PHONE_HASH_SALT`, and overwriting it with the blank template silently breaks
+repeat-handset detection for every participant after that point, with no way
+to recover the original salt. A copy command needs an exclusion to avoid
+that, and an exclusion can be forgotten.
+
+**Only what you have pushed is deployed.** Uncommitted work on the laptop
+does not reach the server. That is deliberate: it means the running code is
+always a commit you can name, check out, and go back to.
+
+**Do not edit files on the droplet.** The next pull will either refuse or
+conflict, and a local commit made there diverges from this repository in a
+way that is easy to create and annoying to unpick. Edit here, push, pull
+there.
+
+## Rolling back
+
+```bash
+ssh arno@167.71.248.46 'cd ~/studies && git checkout <good-commit> && docker compose up -d --build dash'
+```
+
+Return to the tip with `git checkout main` and rebuild again.
 
 ## Not every change needs a rebuild
 
@@ -251,7 +269,7 @@ Save the block as `deploy.sh` if you prefer, but keep the exclude.
 |---|---|
 | `study_site.py`, `store.py` | `docker compose up -d --build dash` |
 | `requirements.txt`, `Dockerfile` | `docker compose up -d --build dash` (slow — reinstalls wheels) |
-| `dash/.env` | `docker compose up -d dash` — no build; recreates the container so it re-reads the file |
+| `dash/.env` | `docker compose up -d dash` — no build; recreates the container so it re-reads the file. Edit it on the droplet: it is not in the repository |
 | `Caddyfile` | `docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile` — it is mounted read-only, so no rebuild at all |
 | `compose.yml` | `docker compose up -d` |
 | Nothing; just wedged | `docker compose restart dash` |
@@ -303,8 +321,8 @@ GET.
 Images are not tagged per deploy, so the way back is the source:
 
 ```bash
-git checkout <good-commit> -- dash/
-# redeploy, then git checkout main -- dash/ when done
+ssh arno@167.71.248.46 'cd ~/studies && git checkout <good-commit> && docker compose up -d --build dash'
+# return to the tip with git checkout main, then rebuild again
 ```
 
 Which is the argument for committing before deploying, so that "the version
