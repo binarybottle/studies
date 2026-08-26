@@ -30,6 +30,10 @@ Routes
 ``GET  /sms-privacy``       Redirect to the canonical privacy notice.
 ``GET  /start``             Prolific entry point.
 ``GET  /consent``           Consent form.
+``GET  /chat``              Browser interview, the channel that works
+                            without a carrier.
+``POST /api/chat/start``    Opens a browser conversation, bound on creation.
+``POST /api/chat/send``     One participant message, one agent reply.
 ``POST /consent``           Records consent, mints the code.
 ``GET  /begin``             Number, code, and polling page.
 ``GET  /status``            Polling target consumed by ``/begin``.
@@ -150,6 +154,14 @@ CONFIRMATION_SMS = (
 # one secret is how one of them ends up stale.
 RETELL_API_KEY = os.environ.get("RETELL_API_KEY", "")
 RETELL_AGENT_ID = os.environ.get("RETELL_AGENT_ID", "")
+RETELL_CHAT_URL = "https://api.retellai.com/create-chat"
+RETELL_CHAT_COMPLETION_URL = "https://api.retellai.com/create-chat-completion"
+
+# Carriers filter outbound A2P messages until the campaign is approved, so
+# until then the SMS channel cannot deliver anything and offering it would
+# offer a path that silently fails. Set SMS_ENABLED=1 on the day approval
+# lands; nothing else changes.
+SMS_ENABLED = os.environ.get("SMS_ENABLED", "").strip().lower() in {"1", "true", "yes"}
 SMS_SEND_URL = os.environ.get(
     "SMS_SEND_URL", "https://api.retellai.com/create-sms-chat"
 )
@@ -767,6 +779,169 @@ async def consent_submit(pid: str, request: Request):
     return RedirectResponse(f"/begin?pid={pid}", status_code=303)
 
 
+def browser_only_page(participant: Participant) -> HTMLResponse:
+    """Offer the browser interview, which is the only channel that works yet.
+
+    Carriers filter outbound messages until the A2P campaign is approved,
+    so offering the text-message option before then would offer a path that
+    fails silently. Once ``SMS_ENABLED`` is set this page is replaced by the
+    two-channel one, and a participant on a phone is defaulted to texting.
+
+    Args:
+        participant: The consented participant.
+
+    Returns:
+        The page that starts a browser conversation.
+    """
+    safe_pid = quote(participant.pid)
+    return page(
+        "Start the interview",
+        f"""
+        <h1>Start the interview</h1>
+        <p>The interview happens right here in your browser. It takes
+        {html.escape(DURATION_TEXT)}, and you answer as the character in the
+        persona you were given.</p>
+
+        <p><a class="btn" href="/chat?pid={safe_pid}">Begin the interview</a></p>
+
+        <p class="muted">Use a keyboard if you have one; there are a lot of
+        questions. Keep this tab open while you answer &mdash; if you close it
+        by accident, open the study link from Prolific again and you will pick
+        up where you left off.</p>
+
+        <p class="muted">If anything goes wrong, email
+        {html.escape(CONTACT_EMAIL)} with your Prolific ID rather than
+        submitting without a completion code, and we will sort out
+        payment.</p>
+        """,
+    )
+
+
+@app.get("/chat", response_class=HTMLResponse)
+async def chat_page(pid: str) -> HTMLResponse:
+    """Serve the browser interview.
+
+    Args:
+        pid: Prolific participant ID.
+
+    Returns:
+        The chat page, or a redirect to consent if it has not been given.
+    """
+    participant = require(pid)
+    if participant.stage is Stage.ARRIVED:
+        return RedirectResponse(f"/consent?pid={pid}", status_code=303)
+
+    return page(
+        "Interview",
+        f"""
+        <h1>Interview</h1>
+        <div id="log" aria-live="polite" style="min-height:12rem; padding:0.5rem 0;">
+          <p class="muted" id="status">Connecting&hellip;</p>
+        </div>
+
+        <form id="composer" style="display:flex; gap:0.5rem; margin-top:1rem;">
+          <input id="entry" autocomplete="off" placeholder="Type your answer"
+                 style="font:inherit; flex:1; padding:0.7rem; border-radius:0.5rem;
+                        border:1px solid currentColor; background:transparent;
+                        color:inherit;" disabled>
+          <button type="submit" id="send" disabled>Send</button>
+        </form>
+
+        <p class="muted" id="done" style="display:none; margin-top:1.5rem;"></p>
+        <p class="muted">Trouble? Email {html.escape(CONTACT_EMAIL)} with your
+        Prolific ID.</p>
+
+        <script>
+        const pid = {participant.pid!r};
+        const log = document.getElementById("log");
+        const status = document.getElementById("status");
+        const entry = document.getElementById("entry");
+        const send = document.getElementById("send");
+
+        function show(who, text) {{
+          const p = document.createElement("p");
+          p.textContent = text;
+          if (who === "you") {{
+            p.style.textAlign = "right";
+            p.style.opacity = "0.75";
+          }}
+          log.appendChild(p);
+          p.scrollIntoView({{ block: "end" }});
+        }}
+
+        function enable(on) {{
+          entry.disabled = !on;
+          send.disabled = !on;
+          if (on) entry.focus();
+        }}
+
+        async function call(path, body) {{
+          const response = await fetch(path, {{
+            method: "POST",
+            headers: {{ "content-type": "application/json" }},
+            body: JSON.stringify(body)
+          }});
+          if (!response.ok) {{
+            const detail = await response.json().catch(() => ({{}}));
+            throw new Error(detail.detail || "Something went wrong.");
+          }}
+          return response.json();
+        }}
+
+        async function begin() {{
+          try {{
+            const started = await call("/api/chat/start", {{ pid: pid }});
+            status.remove();
+            if (started.resumed) {{
+              show("agent", "Welcome back. Carry on where you left off.");
+            }}
+            started.messages.forEach(m => show("agent", m));
+            enable(true);
+          }} catch (error) {{
+            status.textContent = error.message +
+              " Please reload the page; nothing you have answered is lost.";
+          }}
+        }}
+
+        document.getElementById("composer").addEventListener("submit", async (event) => {{
+          event.preventDefault();
+          const text = entry.value.trim();
+          if (!text) return;
+          show("you", text);
+          entry.value = "";
+          enable(false);
+          try {{
+            const answered = await call("/api/chat/send", {{ pid: pid, content: text }});
+            answered.messages.forEach(m => show("agent", m));
+          }} catch (error) {{
+            show("agent", error.message + " Your answer was not lost; try again.");
+          }}
+          enable(true);
+        }});
+
+        async function poll() {{
+          try {{
+            const state = await (await fetch(
+              `/status?pid=${{encodeURIComponent(pid)}}`)).json();
+            if (state.complete && state.completion_url) {{
+              const done = document.getElementById("done");
+              done.innerHTML =
+                'All finished. <a class="btn" href="' + state.completion_url +
+                '">Return to Prolific</a>';
+              done.style.display = "block";
+              return;
+            }}
+          }} catch (error) {{ /* transient; keep polling */ }}
+          setTimeout(poll, 5000);
+        }}
+
+        begin();
+        poll();
+        </script>
+        """,
+    )
+
+
 @app.get("/begin", response_class=HTMLResponse)
 async def begin(pid: str) -> HTMLResponse:
     """Display the study number and code, and poll for completion.
@@ -784,6 +959,9 @@ async def begin(pid: str) -> HTMLResponse:
     participant = require(pid)
     if participant.stage is Stage.ARRIVED:
         return RedirectResponse(f"/consent?pid={pid}", status_code=303)
+
+    if not SMS_ENABLED:
+        return browser_only_page(participant)
 
     # The study number is configured for display, so strip it to E.164 before
     # putting it in a URI: "sms:+1 (507) 431-7807" is not a link any handset
@@ -1177,6 +1355,158 @@ async def opt_in(payload: OptIn, request: Request) -> JSONResponse:
     )
 
 
+class ChatStart(BaseModel):
+    """Request to open a browser conversation for one participant.
+
+    Attributes:
+        pid: Prolific participant ID.
+    """
+
+    pid: str
+
+
+class ChatMessage(BaseModel):
+    """One message typed by a participant in the browser.
+
+    Attributes:
+        pid: Prolific participant ID, checked against the bound chat so a
+            guessed chat id cannot be used to speak as someone else.
+        content: What they typed.
+    """
+
+    pid: str
+    content: str
+
+
+def agent_replies(messages: list[dict[str, Any]]) -> list[str]:
+    """Pull the agent's words out of a Retell completion response.
+
+    The response carries tool calls, node transitions and other bookkeeping
+    alongside the words. Only the agent's own messages belong on screen;
+    everything else is either internal or the participant's own text echoed
+    back.
+
+    Args:
+        messages: The ``messages`` array from a chat completion.
+
+    Returns:
+        The agent's messages in order.
+
+    Example:
+        >>> agent_replies([{"role": "agent", "content": "Hello"},
+        ...                {"role": "tool_call_invocation", "name": "x"},
+        ...                {"role": "user", "content": "hi"}])
+        ['Hello']
+    """
+    return [
+        str(m.get("content", "")).strip()
+        for m in messages
+        if m.get("role") in {"agent", "assistant"} and str(m.get("content", "")).strip()
+    ]
+
+
+async def retell_post(url: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Call Retell and return the parsed body.
+
+    Args:
+        url: Endpoint to call.
+        body: JSON payload.
+
+    Returns:
+        The decoded response.
+
+    Raises:
+        HTTPException: 502 when Retell is unreachable or unhappy. The
+            browser shows the participant a retry rather than a stack
+            trace, and the message never claims the interview is over.
+    """
+    if not RETELL_API_KEY or not RETELL_AGENT_ID:
+        raise HTTPException(status_code=503, detail="Chat is not configured.")
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                url,
+                headers={"Authorization": f"Bearer {RETELL_API_KEY}"},
+                json=body,
+            )
+        response.raise_for_status()
+        return response.json()
+    except Exception as error:  # noqa: BLE001 - provider errors are opaque
+        store.log_event("chat_api_failed", detail=type(error).__name__)
+        raise HTTPException(status_code=502, detail="The interviewer is not responding.")
+
+
+@app.post("/api/chat/start")
+async def chat_start(payload: ChatStart) -> dict[str, Any]:
+    """Open a browser conversation and bind it to the participant.
+
+    This is where the browser channel earns its keep. Retell is told who
+    the participant is at creation, and the chat id comes back in the same
+    response, so the conversation is bound before a word is exchanged. No
+    code is minted, none is typed, and the failure mode where an interview
+    proceeds unlinked cannot occur.
+
+    Args:
+        payload: The participant asking to begin.
+
+    Returns:
+        The agent's opening messages.
+    """
+    participant = require(payload.pid)
+    if participant.stage is Stage.ARRIVED:
+        raise HTTPException(status_code=409, detail="Consent has not been recorded.")
+
+    if participant.chat_id:
+        return {"chat_id": participant.chat_id, "messages": [], "resumed": True}
+
+    created = await retell_post(
+        RETELL_CHAT_URL,
+        {
+            "agent_id": RETELL_AGENT_ID,
+            "metadata": {"prolific_pid": participant.pid},
+            "retell_llm_dynamic_variables": {
+                "channel": "web",
+                "prolific_pid": participant.pid,
+            },
+        },
+    )
+    chat_id = created.get("chat_id")
+    if not chat_id:
+        raise HTTPException(status_code=502, detail="The interviewer is not responding.")
+
+    store.set_channel(participant.pid, "web")
+    store.bind_chat(participant.pid, chat_id)
+    return {
+        "chat_id": chat_id,
+        "messages": agent_replies(created.get("message_with_tool_calls") or []),
+        "resumed": False,
+    }
+
+
+@app.post("/api/chat/send")
+async def chat_send(payload: ChatMessage) -> dict[str, Any]:
+    """Forward one participant message and return the agent's reply.
+
+    Args:
+        payload: The participant and what they typed.
+
+    Returns:
+        The agent's messages, in order.
+    """
+    participant = require(payload.pid)
+    if not participant.chat_id:
+        raise HTTPException(status_code=409, detail="No conversation is open.")
+    content = payload.content.strip()
+    if not content:
+        return {"messages": []}
+
+    answered = await retell_post(
+        RETELL_CHAT_COMPLETION_URL,
+        {"chat_id": participant.chat_id, "content": content},
+    )
+    return {"messages": agent_replies(answered.get("messages") or [])}
+
+
 class RetellFunctionCall(BaseModel):
     """Payload sent by a Retell Function node.
 
@@ -1404,7 +1734,7 @@ async def linkage_export(token: str) -> Response:
         raise HTTPException(status_code=404, detail="Not found")
 
     rows = [
-        "prolific_pid,session_id,code,chat_id,stage,attention_failures,"
+        "prolific_pid,session_id,channel,code,chat_id,stage,attention_failures,"
         "checks_seen,consented_at"
     ]
     for participant in store.all_participants():
@@ -1413,6 +1743,7 @@ async def linkage_export(token: str) -> Response:
                 [
                     participant.pid,
                     participant.session_id or "",
+                    participant.channel or "",
                     participant.code or "",
                     participant.chat_id or "",
                     participant.stage.value,

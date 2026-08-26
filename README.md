@@ -422,6 +422,7 @@ Columns, from [`linkage_export`](dash/study_site.py):
 |---|---|
 | `prolific_pid` | Prolific participant ID. Joins to Prolific's export. |
 | `session_id` | Prolific session ID. |
+| `channel` | `sms` or `web`, whichever the participant actually used. Empty if they never started one. |
 | `code` | The one-time code issued at consent. |
 | `chat_id` | Retell chat ID. Joins to the transcript. Empty until the participant texts in. |
 | `stage` | `arrived`, `consented`, `texting`, `complete`, or `withdrew`. |

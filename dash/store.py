@@ -8,8 +8,8 @@ research team controls — rather than written into the transcript itself.
 Five tables:
 
 ``participants``
-    One row per Prolific submission: stage, issued code, chat id, and the
-    salted hash of the phone number the messages arrived from.
+    One row per Prolific submission: stage, channel, issued code, chat id,
+    and the salted hash of the phone number the messages arrived from.
 ``codes``
     One-time codes, their expiry, attempt count, and the conversation that
     redeemed them. Kept separate from ``participants`` so an expired or
@@ -76,6 +76,7 @@ _write_lock = threading.Lock()
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS participants (
     pid           TEXT PRIMARY KEY,
+    channel       TEXT,
     study_id      TEXT,
     session_id    TEXT,
     stage         TEXT NOT NULL,
@@ -160,6 +161,11 @@ class Participant:
         pid: Prolific participant ID.
         study_id: Prolific study ID.
         session_id: Prolific session ID.
+        channel: How the interview was conducted, ``"sms"`` or ``"web"``,
+            set when the participant starts one. Recorded because a report
+            of trouble is unreadable without it, and because a difference
+            between the two is uninterpretable if nobody wrote down which
+            each participant used.
         stage: Current position in the flow.
         code: The one-time code issued at consent.
         chat_id: Retell chat ID, set once the code is redeemed.
@@ -174,6 +180,7 @@ class Participant:
     pid: str
     study_id: str | None = None
     session_id: str | None = None
+    channel: str | None = None
     stage: Stage = Stage.ARRIVED
     code: str | None = None
     chat_id: str | None = None
@@ -201,7 +208,24 @@ def init_db(path: str | None = None) -> None:
     _connection.execute("PRAGMA journal_mode=WAL")
     _connection.execute("PRAGMA foreign_keys=ON")
     _connection.executescript(SCHEMA)
+    _migrate(_connection)
     _connection.commit()
+
+
+def _migrate(connection: sqlite3.Connection) -> None:
+    """Add columns that a database created by an older version lacks.
+
+    ``CREATE TABLE IF NOT EXISTS`` leaves an existing table alone, so a
+    column added to the schema never reaches a database that already has
+    the table. The study database on the server predates several of them.
+
+    Args:
+        connection: The open connection.
+    """
+    have = {row["name"] for row in connection.execute("PRAGMA table_info(participants)")}
+    for column, ddl in (("channel", "TEXT"),):
+        if column not in have:
+            connection.execute(f"ALTER TABLE participants ADD COLUMN {column} {ddl}")
 
 
 def connection() -> sqlite3.Connection:
@@ -275,6 +299,7 @@ def _row_to_participant(row: sqlite3.Row) -> Participant:
         pid=row["pid"],
         study_id=row["study_id"],
         session_id=row["session_id"],
+        channel=row["channel"],
         stage=Stage(row["stage"]),
         code=row["code"],
         chat_id=row["chat_id"],
@@ -499,6 +524,54 @@ def failure_count(pid: str) -> int:
         (pid,),
     ).fetchone()
     return int(row["n"])
+
+
+def set_channel(pid: str, channel: str) -> None:
+    """Record how a participant is taking part.
+
+    Written when they begin, not when they choose, so a participant who
+    looks at both and starts neither is not counted as either.
+
+    Args:
+        pid: Prolific participant ID.
+        channel: ``"sms"`` or ``"web"``.
+
+    Example:
+        >>> import tempfile, os
+        >>> init_db(os.path.join(tempfile.mkdtemp(), "c.db"))
+        >>> _ = create_participant("p", None, None)
+        >>> set_channel("p", "web")
+        >>> get_participant("p").channel
+        'web'
+    """
+    with _write_lock:
+        connection().execute(
+            "UPDATE participants SET channel = ? WHERE pid = ?", (channel, pid)
+        )
+        connection().commit()
+    log_event(f"channel_{channel}", pid=pid)
+
+
+def bind_chat(pid: str, chat_id: str) -> None:
+    """Bind a conversation to a participant directly.
+
+    The SMS path cannot do this: an inbound text carries no identifier of
+    ours, which is why it needs a code redeemed through ``redeem_code``. A
+    browser conversation is created by this application on behalf of a
+    participant it has already identified, so the binding is known at the
+    moment the chat exists and none of that machinery applies.
+
+    Args:
+        pid: Prolific participant ID.
+        chat_id: Retell chat ID.
+    """
+    with _write_lock:
+        connection().execute(
+            "UPDATE participants SET chat_id = ?, stage = ? WHERE pid = ?",
+            (chat_id, Stage.TEXTING.value, pid),
+        )
+        connection().commit()
+    log_event("chat_bound", pid=pid, chat_id=chat_id)
 
 
 def set_phone_hash(pid: str, number: str) -> None:
