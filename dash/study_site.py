@@ -1244,7 +1244,7 @@ async def complete(payload: RetellFunctionCall = Depends(retell_payload)) -> dic
 
     Called by a Function node placed immediately before the End node, and
     the primary completion signal for this study. The webhook alone is not
-    sufficient: the agent's silence timeout is twenty-four hours, so
+    sufficient: the agent's silence timeout is seventy-two hours, so
     ``chat_ended`` may not fire until long after the participant has given
     up waiting and their Prolific submission has timed out.
 

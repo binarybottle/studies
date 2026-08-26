@@ -59,6 +59,10 @@ CODE_RETRY = (
     "or comment on it."
 )
 SILENCE_MS = 259_200_000  # 72 hours; the timer starts at the confirmation.
+# The two custom tools post to the study host. They live in the flow, so an
+# import overwrites whatever the dashboard says -- which is how a hostname
+# corrected by hand comes back wrong the next time the flow is imported.
+STUDY_HOST = "https://dash.studies.childmind.org"
 
 # HELP is a keyword a carrier tests, so its answer cannot be improvised. Left
 # to the model it invented an address that exists nowhere. Stated as a
@@ -198,7 +202,14 @@ def patch(data: dict) -> dict:
     # participant's first message.
     data["end_chat_after_silence_ms"] = SILENCE_MS
 
-    # 8. A fixed answer for HELP.
+    # 8. Both tools point at the study host, which is now the organization's.
+    for tool in flow.get("tools", []):
+        if "/api/" in tool.get("url", ""):
+            tool["url"] = STUDY_HOST + tool["url"].split("/api/", 1)[1].join(
+                ("/api/", "")
+            )
+
+    # 9. A fixed answer for HELP.
     assert "HELP" not in flow["global_prompt"], "HELP rule already present?"
     flow["global_prompt"] = flow["global_prompt"].rstrip("\n") + "\n" + HELP_RULE
 

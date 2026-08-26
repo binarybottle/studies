@@ -66,6 +66,11 @@ dashboard, not in either repository:
 - `verify_code` -> `https://dash.studies.childmind.org/api/verify-code`
 - `complete_study` -> `https://dash.studies.childmind.org/api/complete`
 
+These live in the flow itself, not only in the dashboard, so an import
+overwrites a correction made by hand. `patch_retell_flow.py` rewrites them
+too; if you edit them in the dashboard instead, remember that the next import
+undoes it.
+
 They keep working on the old hostname while the Caddyfile serves both, so
 this is not urgent on the day — but a chat that cannot reach `verify_code`
 refuses to start the interview, by design, so leaving it undone eventually
