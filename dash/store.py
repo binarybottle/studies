@@ -474,7 +474,7 @@ def redeem_code(code: str, chat_id: str | None, max_attempts: int = 5) -> tuple[
             "UPDATE codes SET redeemed_by_chat = ? WHERE code = ?", (chat_id, code)
         )
         connection().execute(
-            "UPDATE participants SET chat_id = ?, stage = ?"
+            "UPDATE participants SET chat_id = ?, stage = ?, channel = 'sms'"
             " WHERE pid = ? AND stage = ?",
             (chat_id, Stage.TEXTING.value, row["pid"], Stage.CONSENTED.value),
         )

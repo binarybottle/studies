@@ -947,19 +947,103 @@ async def chat_page(pid: str) -> HTMLResponse:
     )
 
 
-@app.get("/begin", response_class=HTMLResponse)
-async def begin(pid: str) -> HTMLResponse:
-    """Display the study number and code, and poll for completion.
+def prefers_sms(user_agent: str) -> bool:
+    """Guess whether this device should be offered texting first.
 
-    The page stays open while the conversation happens on the
-    participant's phone. Polling is the only way the browser learns that
-    the out-of-band conversation finished.
+    A phone can open the messaging app from a link with the code already
+    filled in; a desktop cannot, and its owner would have to retype a code
+    on a handset. So the device decides which option is presented first.
+    It decides nothing else: both are offered either way, because someone
+    on a phone may not want a research study in their message history, and
+    someone at a desk may have their messages there too.
+
+    Args:
+        user_agent: The browser's ``User-Agent`` header.
+
+    Returns:
+        True if this looks like a phone or tablet.
+
+    Example:
+        >>> prefers_sms("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)")
+        True
+        >>> prefers_sms("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)")
+        False
+    """
+    return bool(re.search(r"Android|iPhone|iPad|iPod|Mobile", user_agent))
+
+
+def sms_card(participant: Participant) -> str:
+    """Build the text-message option.
+
+    Args:
+        participant: The consented participant, whose code is shown.
+
+    Returns:
+        Markup for the card.
+    """
+    sms_number = normalize_phone(STUDY_SMS_NUMBER) or STUDY_SMS_NUMBER
+    sms_link = f"sms:{sms_number}?body={participant.code}"
+    optin_link = f"{OPTIN_PAGE_URL}?pid={quote(participant.pid)}"
+    return f"""
+        <div class="card">
+          <h2>By text message</h2>
+          <p>On your own phone, in your usual messaging app. You can put it
+          down and pick it up again; the conversation waits for you.</p>
+
+          <p><strong>First</strong>, opt in to messages:
+          <a href="{html.escape(optin_link)}">our opt-in page</a>. You enter
+          your mobile number and tick a box; the box is not ticked for you.
+          We send one confirmation text.</p>
+
+          <p><strong>Then</strong> text this code to
+          <strong>{html.escape(STUDY_SMS_NUMBER)}</strong>:</p>
+          <div class="code">{html.escape(participant.code or '')}</div>
+          <p style="text-align:center">
+            <a class="btn" id="sms-link"
+               href="{html.escape(sms_link)}">Open my messaging app</a>
+          </p>
+        </div>"""
+
+
+def web_card(participant: Participant) -> str:
+    """Build the browser option.
+
+    Args:
+        participant: The consented participant.
+
+    Returns:
+        Markup for the card.
+    """
+    return f"""
+        <div class="card">
+          <h2>In this browser</h2>
+          <p>The interview happens on this page. Nothing is sent to your
+          phone and we never ask for your number.</p>
+          <p>Best with a keyboard &mdash; there are a lot of questions. Keep
+          the tab open; if you close it, open the study link from Prolific
+          again and you will pick up where you left off.</p>
+          <p style="text-align:center">
+            <a class="btn" href="/chat?pid={quote(participant.pid)}">Begin the
+            interview</a>
+          </p>
+        </div>"""
+
+
+@app.get("/begin", response_class=HTMLResponse)
+async def begin(pid: str, request: Request) -> HTMLResponse:
+    """Offer the two channels, and poll for completion.
+
+    The device decides which is presented first and nothing more: both are
+    always offered. Polling covers the text-message case, where the
+    conversation happens out of band and this page has no other way to
+    learn that it finished.
 
     Args:
         pid: Prolific participant ID.
+        request: The request, read for the device it came from.
 
     Returns:
-        The instructions and polling page.
+        The choice page, or the browser-only one while SMS cannot deliver.
     """
     participant = require(pid)
     if participant.stage is Stage.ARRIVED:
@@ -968,62 +1052,33 @@ async def begin(pid: str) -> HTMLResponse:
     if not SMS_ENABLED:
         return browser_only_page(participant)
 
-    # The study number is configured for display, so strip it to E.164 before
-    # putting it in a URI: "sms:+1 (507) 431-7807" is not a link any handset
-    # parses. The separator differs by platform -- RFC 5724 says "?", which
-    # Android follows, while iOS wants "&" -- so the page ships the standard
-    # form and a few lines of script swap it on iOS. Either way the recipient
-    # is right, and the code is displayed on the page regardless, so a handset
-    # that prefills nothing costs a participant one paste rather than the
-    # conversation.
-    sms_number = normalize_phone(STUDY_SMS_NUMBER) or STUDY_SMS_NUMBER
-    sms_link = f"sms:{sms_number}?body={participant.code}"
-    optin_link = f"{OPTIN_PAGE_URL}?pid={quote(pid)}"
+    first_is_sms = prefers_sms(request.headers.get("user-agent", ""))
+    cards = (
+        [sms_card(participant), web_card(participant)]
+        if first_is_sms
+        else [web_card(participant), sms_card(participant)]
+    )
+    other = "texting" if first_is_sms else "the browser"
     return page(
-        "Start the interview",
+        "Choose how to take part",
         f"""
-        <h1>Two steps to begin</h1>
+        <h1>Choose how to take part</h1>
+        <p>Two ways to do the same interview. Expect
+        {html.escape(DURATION_TEXT)} either way, and answer as the character
+        in the persona you were given.</p>
 
-        <h2>Step 1: opt in to text messages</h2>
-        <p><a class="btn" href="{html.escape(optin_link)}">Opt in to text
-        messages</a></p>
-        <p class="muted">This opens our opt-in page, where you enter your
-        mobile number and tick a box to agree to receive messages. The box is
-        not ticked for you. We send one confirmation text, and then you send
-        the code below. Opting in through that page is what records your
-        permission to be messaged.</p>
+        {cards[0]}
+        <p class="muted" style="text-align:center">or</p>
+        {cards[1]}
 
-        <h2>Step 2: text us the code</h2>
-        <div class="card">
-          <p class="muted">Send a text message to</p>
-          <div class="number">{html.escape(STUDY_SMS_NUMBER)}</div>
-          <p class="muted">with this code as your first message</p>
-          <div class="code">{html.escape(participant.code or '')}</div>
-          <p style="text-align:center">
-            <a class="btn" id="sms-link"
-               href="{html.escape(sms_link)}">Open my messaging app</a>
-          </p>
-        </div>
+        <p class="muted">Either is fine &mdash; we have put {html.escape(other)}
+        second only because of the device you are on. Pick whichever suits
+        you.</p>
 
-        <p><strong>Keep this page open.</strong> When the interview finishes,
-        your completion link will appear here automatically. We will also text
-        it to you, so you can close this page if you need to.</p>
-
-        <p class="muted">Expect {html.escape(DURATION_TEXT)}. If you get
-        interrupted, reply again any time within 24 hours and we will pick up
-        where we left off. After 24 hours the conversation closes and cannot
-        be resumed.</p>
-
-        <p class="muted">You can stop at any time by replying STOP. If you do
-        stop, or if you decide not to finish, email
-        {html.escape(CONTACT_EMAIL)} with your Prolific ID so we can arrange
-        payment for the part you completed &mdash; replying STOP ends the
-        conversation, so we cannot send you a completion link.</p>
-
-        <p class="muted">Message and data rates may apply. This code expires in
-        six hours. No reply after a couple of minutes? Email
-        {html.escape(CONTACT_EMAIL)} with your Prolific ID rather than
-        submitting without a code, and we will sort out payment.</p>
+        <p class="muted">You can stop at any time. If you stop, or if
+        something goes wrong, email {html.escape(CONTACT_EMAIL)} with your
+        Prolific ID rather than submitting without a completion code, and we
+        will arrange payment for the part you completed.</p>
 
         <div id="done" style="display:none">
           <h2>All finished</h2>
@@ -1040,12 +1095,12 @@ async def begin(pid: str) -> HTMLResponse:
           if (link) {{ link.href = link.href.replace("?body=", "&body="); }}
         }}
 
-        const pid = {pid!r};
+        const pid = {participant.pid!r};
         async function poll() {{
           try {{
             const response = await fetch(`/status?pid=${{encodeURIComponent(pid)}}`);
             const state = await response.json();
-            if (state.complete) {{
+            if (state.complete && state.completion_url) {{
               document.getElementById("done-link").href = state.completion_url;
               document.getElementById("done").style.display = "block";
               return;
