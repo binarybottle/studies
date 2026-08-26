@@ -651,6 +651,56 @@ async def consent_form(pid: str | None = None) -> HTMLResponse:
 
     require(pid)
     safe_pid = html.escape(pid)
+    if SMS_ENABLED:
+        channel_card = f'''<div class="card">
+          <p class="muted">Our study number is</p>
+          <div class="number">{html.escape(STUDY_SMS_NUMBER)}</div>
+          <p>There are two ways to take part, and you choose on the next
+          page: <strong>in your browser</strong> on this device, or
+          <strong>by text message</strong> from your own phone. Both ask the
+          same questions and take about as long.</p>
+          <p>If you choose text messages there is one extra step: you opt in
+          on a separate page and text the number above. Nothing is ever sent
+          to a number that has not opted in. If you choose the browser we
+          never ask for your number at all.</p>
+          <p>Agreeing below records your consent to take part in the pilot.
+          It does not send you any messages and does not sign you up for
+          anything.</p>
+        </div>'''
+        decision_text = (
+            "Agreeing takes you to a page where you choose how to take part."
+        )
+        stop_text = (
+            "If you are taking part by text message, <strong>reply "
+            "STOP</strong> to the conversation. In the browser, close the "
+            "page."
+        )
+        messaging_terms = f'''<h2>Messaging terms</h2>
+        <p>These apply if you choose text messages. Message and data rates
+        may apply, and this study is unusually message-heavy: expect roughly
+        100 to 200 messages in one session. Reply STOP to opt out, HELP for
+        help. Your number will never be used for marketing and will not be
+        sold or shared. See the
+        <a href="{PRIVACY_URL}">privacy policy</a> and
+        <a href="{TERMS_URL}">terms of use</a>, plus our
+        <a href="{SMS_TERMS_URL}">messaging terms</a> and
+        <a href="{SMS_PRIVACY_URL}">SMS privacy notice</a>, which describes
+        what happens to your phone number.</p>'''
+    else:
+        channel_card = '''<div class="card">
+          <p>The interview happens <strong>in your browser</strong>, on this
+          device. Nothing is sent to your phone, and we never ask for your
+          number.</p>
+          <p>Agreeing below records your consent to take part in the pilot.
+          It does not sign you up for anything.</p>
+        </div>'''
+        decision_text = "Agreeing takes you to the interview."
+        stop_text = "To stop, close the page."
+        messaging_terms = f'''<h2>What we do not do</h2>
+        <p>No text messages are sent, and we never ask for your phone
+        number. See the <a href="{PRIVACY_URL}">privacy policy</a> and
+        <a href="{TERMS_URL}">terms of use</a>.</p>'''
+
     return page(
         "About this study",
         f"""
@@ -687,10 +737,9 @@ async def consent_form(pid: str | None = None) -> HTMLResponse:
 
         <h2>How to stop</h2>
         <p>Taking part is voluntary and you may stop at any point without
-        giving a reason. To stop, <strong>reply STOP</strong> to the text
-        conversation. You can also simply close this page and return the
-        study on Prolific. Stopping will not affect your standing on Prolific
-        in any way.</p>
+        giving a reason. {stop_text} You can also simply close this page and
+        return the study on Prolific. Stopping will not affect your standing
+        on Prolific in any way.</p>
 
         <h2>What we collect and keep</h2>
         <p>We keep the text of the conversation and your Prolific ID. Your
@@ -700,29 +749,10 @@ async def consent_form(pid: str | None = None) -> HTMLResponse:
         describe a fictional character, the conversation contains no real
         information about any real child.</p>
 
-        <h2>The study number</h2>
-        <div class="card">
-          <p class="muted">You will text</p>
-          <div class="number">{html.escape(STUDY_SMS_NUMBER)}</div>
-          <p>Agreeing below records your consent to take part in the pilot. It
-          does not send you any messages and does not sign you up for anything.
-          Text messages are a separate, optional step: after this page you are
-          shown our opt-in page, where you enter your mobile number and tick a
-          box to agree to receive them. You can take part only if you complete
-          that step, but nothing is sent to you until you do.</p>
-        </div>
+        <h2>How the interview happens</h2>
+        {channel_card}
 
-        <h2>Messaging terms</h2>
-        <p>Message and data rates may apply, and this study is unusually
-        message-heavy: expect roughly 100 to 200 messages in one session.
-        Reply STOP to opt out, HELP for
-        help. Your number will never be used for marketing and will not be
-        sold or shared. See the
-        <a href="{PRIVACY_URL}">privacy policy</a> and
-        <a href="{TERMS_URL}">terms of use</a>, plus our
-        <a href="{SMS_TERMS_URL}">messaging terms</a> and
-        <a href="{SMS_PRIVACY_URL}">SMS privacy notice</a>, which describes
-        what happens to your phone number.</p>
+        {messaging_terms}
 
         <h2>A note on the questions</h2>
         <p>The questionnaire is a standardized mental health screener, so some
@@ -738,11 +768,9 @@ async def consent_form(pid: str | None = None) -> HTMLResponse:
         anything goes wrong or you want to know more.</p>
 
         <h2>Your decision</h2>
-        <p>Agreeing takes you to the next step: opting in to text messages,
-        and then the number again with your one-time code. Declining returns
-        you to Prolific straight away, with a code that pays you for the time
-        you spent reading this. Either way you are never sent a text message
-        you did not ask for.</p>
+        <p>{decision_text} Declining returns you to Prolific straight away,
+        with a code that pays you for the time you spent reading this. Either
+        way you are never sent a text message you did not ask for.</p>
 
         <form method="post" action="/consent?pid={safe_pid}">
           <button type="submit" name="decision" value="consent">
@@ -840,7 +868,17 @@ async def chat_page(pid: str) -> HTMLResponse:
         "Interview",
         f"""
         <h1>Interview</h1>
-        <div id="log" aria-live="polite" style="min-height:12rem; padding:0.5rem 0;">
+        <p>The interviewer asks one question at a time. Type your answer in
+        the box and press Send. Answer <strong>as the character in the
+        persona you were given</strong> &mdash; not about yourself or your own
+        family.</p>
+        <p class="muted">Short answers are fine. If a question is not clear,
+        type <em>I don't understand</em> and it will be asked a different way.
+        Some questions ask about difficult topics; you are answering about a
+        fictional child. Expect {html.escape(DURATION_TEXT)}.</p>
+
+        <div id="log" aria-live="polite" style="min-height:12rem; padding:0.5rem 0;
+             border-top:1px solid currentColor; margin-top:1rem;">
           <p class="muted" id="status">Connecting&hellip;</p>
         </div>
 
@@ -1058,7 +1096,6 @@ async def begin(pid: str, request: Request) -> HTMLResponse:
         if first_is_sms
         else [web_card(participant), sms_card(participant)]
     )
-    other = "texting" if first_is_sms else "the browser"
     return page(
         "Choose how to take part",
         f"""
@@ -1070,10 +1107,6 @@ async def begin(pid: str, request: Request) -> HTMLResponse:
         {cards[0]}
         <p class="muted" style="text-align:center">or</p>
         {cards[1]}
-
-        <p class="muted">Either is fine &mdash; we have put {html.escape(other)}
-        second only because of the device you are on. Pick whichever suits
-        you.</p>
 
         <p class="muted">You can stop at any time. If you stop, or if
         something goes wrong, email {html.escape(CONTACT_EMAIL)} with your
