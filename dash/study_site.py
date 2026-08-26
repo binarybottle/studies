@@ -161,6 +161,7 @@ RETELL_AGENT_ID = os.environ.get(
 )
 RETELL_CHAT_URL = "https://api.retellai.com/create-chat"
 RETELL_CHAT_COMPLETION_URL = "https://api.retellai.com/create-chat-completion"
+RETELL_GET_CHAT_URL = "https://api.retellai.com/get-chat"
 
 # Carriers filter outbound A2P messages until the campaign is approved, so
 # until then the SMS channel cannot deliver anything and offering it would
@@ -908,6 +909,7 @@ async def chat_page(pid: str) -> HTMLResponse:
             p.style.textAlign = "right";
             p.style.opacity = "0.75";
           }}
+          if (who === "agent") p.style.fontWeight = "500";
           log.appendChild(p);
           p.scrollIntoView({{ block: "end" }});
         }}
@@ -935,10 +937,23 @@ async def chat_page(pid: str) -> HTMLResponse:
           try {{
             const started = await call("/api/chat/start", {{ pid: pid }});
             status.remove();
-            if (started.resumed) {{
-              show("agent", "Welcome back. Carry on where you left off.");
-            }}
+            (started.history || []).forEach(m => show(m.who, m.text));
             started.messages.forEach(m => show("agent", m));
+
+            if (started.ended) {{
+              show("agent",
+                "This conversation has closed. Email the address below with " +
+                "your Prolific ID and we will sort out your payment.");
+              return;
+            }}
+            // A resumed conversation with nothing in it, or one whose last
+            // word was the participant's, leaves nobody waiting on anybody.
+            // Say so rather than showing an empty box.
+            const last = (started.history || []).slice(-1)[0];
+            if (started.resumed && (!last || last.who === "you")) {{
+              show("agent",
+                "Picking up where you left off. Send anything to continue.");
+            }}
             enable(true);
           }} catch (error) {{
             status.textContent = error.message +
@@ -1498,6 +1513,63 @@ def agent_replies(messages: list[dict[str, Any]]) -> list[str]:
     ]
 
 
+def conversation_so_far(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Turn a stored transcript into what belongs on screen.
+
+    Keeps both sides, in order, and drops the bookkeeping: tool calls, their
+    results, and node transitions are how the flow works rather than
+    anything anyone said.
+
+    Args:
+        messages: A ``message_with_tool_calls`` array.
+
+    Returns:
+        ``{"who": "agent"|"you", "text": ...}`` in the order they happened.
+
+    Example:
+        >>> conversation_so_far([{"role": "agent", "content": "Hi"},
+        ...                      {"role": "node_transition"},
+        ...                      {"role": "user", "content": "hello"}])
+        [{'who': 'agent', 'text': 'Hi'}, {'who': 'you', 'text': 'hello'}]
+    """
+    shown = []
+    for message in messages:
+        role = message.get("role")
+        text = str(message.get("content", "")).strip()
+        if not text:
+            continue
+        if role in {"agent", "assistant"}:
+            shown.append({"who": "agent", "text": text})
+        elif role == "user":
+            shown.append({"who": "you", "text": text})
+    return shown
+
+
+async def retell_get(url: str) -> dict[str, Any]:
+    """Read from Retell and return the parsed body.
+
+    Args:
+        url: Endpoint to read.
+
+    Returns:
+        The decoded response, empty if Retell cannot be reached. A history
+        that fails to load is a worse reason to block someone than showing
+        them a conversation that starts mid-way.
+    """
+    if not RETELL_API_KEY:
+        return {}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(
+                url, headers={"Authorization": f"Bearer {RETELL_API_KEY}"}
+            )
+        response.raise_for_status()
+        return response.json()
+    except Exception as error:  # noqa: BLE001 - provider errors are opaque
+        store.log_event("chat_history_failed", detail=type(error).__name__)
+        return {}
+
+
 async def retell_post(url: str, body: dict[str, Any]) -> dict[str, Any]:
     """Call Retell and return the parsed body.
 
@@ -1550,7 +1622,17 @@ async def chat_start(payload: ChatStart) -> dict[str, Any]:
         raise HTTPException(status_code=409, detail="Consent has not been recorded.")
 
     if participant.chat_id:
-        return {"chat_id": participant.chat_id, "messages": [], "resumed": True}
+        # Resuming has to bring the conversation back with it. Without the
+        # history the participant is returned to an empty page with a text
+        # box and no question, which is worse than never having left.
+        existing = await retell_get(f"{RETELL_GET_CHAT_URL}/{participant.chat_id}")
+        return {
+            "chat_id": participant.chat_id,
+            "history": conversation_so_far(existing.get("message_with_tool_calls") or []),
+            "messages": [],
+            "resumed": True,
+            "ended": existing.get("chat_status") == "ended",
+        }
 
     created = await retell_post(
         RETELL_CHAT_URL,
@@ -1571,8 +1653,10 @@ async def chat_start(payload: ChatStart) -> dict[str, Any]:
     store.bind_chat(participant.pid, chat_id)
     return {
         "chat_id": chat_id,
+        "history": [],
         "messages": agent_replies(created.get("message_with_tool_calls") or []),
         "resumed": False,
+        "ended": False,
     }
 
 
