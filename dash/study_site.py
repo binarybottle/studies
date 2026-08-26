@@ -777,7 +777,16 @@ async def begin(pid: str) -> HTMLResponse:
     if participant.stage is Stage.ARRIVED:
         return RedirectResponse(f"/consent?pid={pid}", status_code=303)
 
-    sms_link = f"sms:{STUDY_SMS_NUMBER.replace(' ', '')}&body={participant.code}"
+    # The study number is configured for display, so strip it to E.164 before
+    # putting it in a URI: "sms:+1 (507) 431-7807" is not a link any handset
+    # parses. The separator differs by platform -- RFC 5724 says "?", which
+    # Android follows, while iOS wants "&" -- so the page ships the standard
+    # form and a few lines of script swap it on iOS. Either way the recipient
+    # is right, and the code is displayed on the page regardless, so a handset
+    # that prefills nothing costs a participant one paste rather than the
+    # conversation.
+    sms_number = normalize_phone(STUDY_SMS_NUMBER) or STUDY_SMS_NUMBER
+    sms_link = f"sms:{sms_number}?body={participant.code}"
     optin_link = f"{OPTIN_PAGE_URL}?pid={quote(pid)}"
     return page(
         "Start the interview",
@@ -800,7 +809,8 @@ async def begin(pid: str) -> HTMLResponse:
           <p class="muted">with this code as your first message</p>
           <div class="code">{html.escape(participant.code or '')}</div>
           <p style="text-align:center">
-            <a class="btn" href="{html.escape(sms_link)}">Open my messaging app</a>
+            <a class="btn" id="sms-link"
+               href="{html.escape(sms_link)}">Open my messaging app</a>
           </p>
         </div>
 
@@ -832,6 +842,13 @@ async def begin(pid: str) -> HTMLResponse:
         </div>
 
         <script>
+        // iOS does not follow RFC 5724 here: it expects & where the standard
+        // says ?. Rewriting on the client keeps one link correct on both.
+        if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {{
+          const link = document.getElementById("sms-link");
+          if (link) {{ link.href = link.href.replace("?body=", "&body="); }}
+        }}
+
         const pid = {pid!r};
         async function poll() {{
           try {{
