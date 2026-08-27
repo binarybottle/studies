@@ -27,8 +27,8 @@ affected.
 | Thing | Value |
 | --- | --- |
 | Study SMS number (DID) | +1 (507) 431-7807 |
-| Study site (participant flow) | https://study.arnoklein.info |
-| Prolific study URL | https://study.arnoklein.info/start |
+| Study site (participant flow) | https://dash.studies.childmind.org |
+| Prolific study URL | https://dash.studies.childmind.org/start — confirm it is set to this in Prolific |
 | Opt-in page (cited in the campaign) | https://matter.childmind.org/studies/dash/opt-in/ |
 | A2P campaign / program name | Child Mind Institute MATTER Lab |
 | SMS terms | https://matter.childmind.org/sms-terms/ |
@@ -55,10 +55,10 @@ Two code repositories:
 1. Prolific sends the participant to `/start` with their identifiers.
 2. `/consent` shows the information sheet. Agreeing records consent to take
    part; it sends no messages.
-3. `/begin` offers the interview. While `SMS_ENABLED` is unset — which it is,
-   because carriers filter A2P traffic until the campaign is approved — it
-   offers the browser only. With it set, it offers both, device-appropriate
-   one first, and both are always available.
+3. `/begin` offers the interview. `SMS_ENABLED` decides: unset, it offers the
+   browser only; set, it offers both, device-appropriate one first, with both
+   always available. **It is currently set to 1 on the droplet**, so both are
+   offered — see the note under *What is left to do*.
 4. **By text:** the opt-in page on matter.childmind.org collects a mobile
    number and an **unchecked** checkbox carrying the SMS disclosure.
    Submitting posts to `POST /api/opt-in` on the study site, which records the
@@ -148,25 +148,38 @@ Owned by us, in order:
 
 1. **Chase CMI IT on the Cloudflare exemption.** Nothing else matters until
    all four URLs return 200 to `curl`. See rejection 3 above.
-2. **Deploy the consent-wording changes** (`docker compose up -d --build
-   dash`) and **push `matter-website`** — the opt-in page, `sms-terms.html`
-   and `text-study.html` are edited and uncommitted there.
-3. **Put the Retell API key on the droplet** as `SMS_SEND_TOKEN` in
-   `dash/.env`, then redeploy.
+2. ~~**Deploy the consent-wording changes and push `matter-website`.**~~
+   **Done, 26 Aug 2026.** The droplet and this repository are both at the same
+   commit, both hostnames serve the new wording, and `matter-website` is
+   pushed to `gh-pages`. The CMS pages cannot be verified from outside a
+   browser while the Cloudflare challenge stands.
+3. ~~**Put the Retell API key on the droplet.**~~ **Done.** It is set as
+   `RETELL_API_KEY`; `SMS_SEND_TOKEN` stays unset and falls back to it. Do not
+   set both — one secret under two names is how one goes stale.
 4. **Set the outbound agent's begin message** in the Retell dashboard to
    exactly the confirmation text registered with the campaign:
    *"Child Mind Institute MATTER Lab: You are opted in to research study
    messages. Msg & data rates may apply. Msg freq varies. Reply STOP to
    cancel, HELP for help."*
 5. **Resubmit the A2P campaign.** The field text is written and ready.
-6. **Check the Prolific completion paths** — three codes exist (complete,
-   attention-check failure, no-consent screen-out) and each needs the right
-   action attached. Never a rejection.
+6. **Check the Prolific completion paths.** The three codes are set on the
+   droplet (complete, attention-check failure, no-consent screen-out); what is
+   unverified is the action attached to each one in Prolific. Never a
+   rejection.
 7. **Dry-run the participant path** in a browser with a fresh Prolific ID.
 8. **On approval:** verify a confirmation text actually arrives before any
    participant sees the page.
-9. **When DNS lands:** switch hostnames. A runbook exists; four places name
-   the host and three fail quietly if missed.
+9. **Switch hostnames.** DNS landed 25 Aug 2026 and `dash.studies.childmind.org`
+   is serving, so this is unblocked. `hostname-switch.md` is the runbook; four
+   places name the host and three fail quietly if missed. A rename to
+   `study.childmind.org` has been floated with CMI IT — if it happens, ask for
+   the new name to be *added* alongside the old rather than swapped.
+
+**Note on `SMS_ENABLED`.** It is `1` on the droplet, which offers participants
+a text-message path that carriers will filter until the campaign is approved.
+Harmless while no study is running, and it corroborates the campaign's claim
+that both channels exist. It must not still be `1` when participants arrive
+unless approval has landed.
 
 ## The agent flow, as of 25 August 2026
 
@@ -182,9 +195,9 @@ The exported Retell flow reaches 412 of its 423 nodes from the start node.
 `Extract study code`, `Verify code` and `Code not accepted` are among the
 eleven it never reaches: they form a closed loop nothing points into, so the
 interview begins without a code and no conversation is ever bound to a
-Prolific submission. Fixing this is independent of the campaign and has to
-happen before any participant reaches the agent. Step-by-step dashboard
-changes are in `dash/optin/retell-flow-changes.md`.
+Prolific submission. Fixing this is independent of the campaign and had to
+happen before any participant reached the agent. The patch has since been
+applied and imported; all that is left is confirming the version is published.
 
 ## Traps — things that look fine and are not
 

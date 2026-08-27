@@ -114,19 +114,19 @@ group membership.
 
 ## 3. DNS
 
-One A record per study hostname. DreamHost panel → `arnoklein.info` → DNS →
-**A** → ADD.
+One A record per study hostname. For a `childmind.org` host this is CMI IT's
+to make; for a domain you control, your registrar's DNS panel.
 
 | Field | Value |
 |---|---|
-| Host | `study` |
+| Host | the study's subdomain, e.g. `dash.studies` |
 | Points to | the droplet's IPv4 address |
 
 Verify before continuing — Caddy's certificate request fails if the name does
 not yet resolve:
 
 ```bash
-dig +short study.arnoklein.info @1.1.1.1
+dig +short dash.studies.childmind.org @1.1.1.1
 ```
 
 If a domain is ever moved behind Cloudflare, keep the record **DNS-only
@@ -258,10 +258,10 @@ Both `curl` checks below are run **on the droplet** — the expected `404` in
 the second one depends on that:
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' https://study.arnoklein.info/sms-terms
+curl -s -o /dev/null -w '%{http_code}\n' https://dash.studies.childmind.org/sms-terms
 # expect 200
 
-curl -s -o /dev/null -w '%{http_code}\n' https://study.arnoklein.info/admin/linkage.csv
+curl -s -o /dev/null -w '%{http_code}\n' https://dash.studies.childmind.org/admin/linkage.csv
 # expect 404 -- from the droplet, which is not your home address
 ```
 
@@ -378,7 +378,7 @@ see that study's README; for DASH,
 [Verify](#verify) above — use the `%{http_code}` GET form.
 
 **Caddy loops requesting a certificate.** DNS has not propagated, or the name
-resolves somewhere else. Check `dig +short study.arnoklein.info @1.1.1.1`.
+resolves somewhere else. Check `dig +short dash.studies.childmind.org @1.1.1.1`.
 
 **502 from Caddy.** The study's container is down or still starting.
 `docker compose ps` and `docker compose logs dash`.

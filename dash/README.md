@@ -27,8 +27,9 @@ submitted for Institutional Review Board review.
 
 | Thing | Value |
 |---|---|
-| Study site | `https://study.arnoklein.info` |
-| Prolific study URL | `https://study.arnoklein.info/start` |
+| Study site | `https://dash.studies.childmind.org` |
+| Prolific study URL | `https://dash.studies.childmind.org/start` — see the note below |
+| Opt-in form endpoint | `https://dash.studies.childmind.org/api/opt-in` |
 | Study SMS number (DID) | +1 (507) 431-7807 |
 | Opt-in page | `https://matter.childmind.org/studies/dash/opt-in/` |
 | SMS terms / privacy notice | `matter.childmind.org/sms-terms/`, `/sms-privacy/` |
@@ -120,7 +121,7 @@ actually used.
 In Prolific, the study URL is `/start` with **no query string**:
 
 ```
-https://study.arnoklein.info/start
+https://dash.studies.childmind.org/start
 ```
 
 Prolific appends `?PROLIFIC_PID=…&STUDY_ID=…&SESSION_ID=…` itself. Do not
@@ -200,7 +201,7 @@ correctly; every other way of reading the file does not, which is how a
 After a deploy, with a fresh Prolific ID:
 
 ```
-https://study.arnoklein.info/start?PROLIFIC_PID=test123456789012345678
+https://dash.studies.childmind.org/start?PROLIFIC_PID=test123456789012345678
 ```
 
 Information sheet → consent → a five-character code, and either the browser
@@ -234,11 +235,11 @@ From your laptop, on the allow-listed IP:
 TOKEN=$(ssh arno@167.71.248.46 \
     'cd ~/studies && docker compose exec -T dash printenv ADMIN_TOKEN' \
     | /usr/bin/tr -d ' \t\r\n')
-curl -s "https://study.arnoklein.info/admin/linkage.csv?token=$TOKEN" \
+curl -s "https://dash.studies.childmind.org/admin/linkage.csv?token=$TOKEN" \
     -o ~/Desktop/linkage-$(date +%F).csv
 ```
 
-`167.71.248.46` is the droplet; `dig +short study.arnoklein.info` confirms
+`167.71.248.46` is the droplet; `dig +short dash.studies.childmind.org` confirms
 it if that ever changes. The CSV lands wherever `-o` points — an absolute
 path, because a relative one lands in whatever directory the terminal
 happens to be in, and this file should not end up inside the repository.
@@ -365,9 +366,7 @@ optin/
     build_optin_page.py       Generates the opt-in page from the app's constants
     add_web_branch.py         Adds the browser branch to the Retell flow export
     patch_retell_flow.py      Applies the flow fixes to a Retell export
-    retell-flow-changes.md    The same changes, as dashboard steps
-    hostname-switch.md        Runbook for moving to studies.childmind.org
-    email-cmi-dns-followup.md Correspondence with CMI IT
+    hostname-switch.md        Runbook for moving to the childmind.org host
 ```
 
 Paperwork rather than code, but it quotes this study's number and
@@ -410,7 +409,7 @@ successful API call means Retell accepted it, not that anyone received it.
 
 **A participant's interview reads as if it never had a code.** The Retell
 flow's verification nodes were unreachable in an earlier export. See
-`optin/retell-flow-changes.md`, and confirm the flow version in the Retell
+The patched flow has been imported; confirm the version in the Retell
 dashboard is actually **published** — a draft version leaves the live number
 answering with the old flow.
 

@@ -27,16 +27,21 @@ Already done in the repository; the site block serves both names:
 study.arnoklein.info, dash.studies.childmind.org {
 ```
 
-Keeping the old name is deliberate. Participants mid-study have the old URL
-open, Prolific has it recorded against submissions in flight, and the opt-in
-page posts to it. Retire it only once nothing points at it, which is at least
-one full study later.
+Keeping the old name was deliberate while a study might have been running:
+participants mid-study would have had the old URL open and Prolific would have
+had it recorded against submissions in flight. Neither is true — no study has
+begun — and the opt-in page now posts to the new host, so the old name can be
+retired as soon as steps 4 and 5 are done. The documentation no longer refers
+to it.
 
 ```bash
-scp Caddyfile arno@167.71.248.46:~/studies/
-ssh arno@167.71.248.46 'cd ~/studies && docker compose restart caddy'
-docker compose logs caddy | tail -20     # watch the certificate issue
+ssh arno@167.71.248.46 'cd ~/studies && git pull && \
+    docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile'
+ssh arno@167.71.248.46 'cd ~/studies && docker compose logs caddy | tail -20'
 ```
+
+Commit and push first: the droplet is a checkout, and copying files up is the
+thing the repository README warns against.
 
 ## 2. The study site — where the opt-in form posts
 
