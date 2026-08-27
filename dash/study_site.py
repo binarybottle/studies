@@ -335,10 +335,17 @@ def public_information_body() -> str:
     resolves to the same disclosures without a query string.
 
     The study number appears in the markup before any button, and the
-    opt-in is described as the participant texting us. A campaign review
+    opt-in is the checkbox on the published opt-in page. A campaign review
     reads a number revealed only after an agreement as "consent required
     to receive the service", which is not permitted; here the agreement
     records consent to take part and reveals nothing but a session code.
+
+    The page must also say, affirmatively, that agreeing to receive text
+    messages is not required in order to take part or to be paid. That is
+    true because ``/chat`` runs the same interview in the browser, and a
+    review that cannot find it stated rejects the campaign for making
+    consent a condition of service. Saying only that consent is not a
+    condition of *other* activities concedes the point for this one.
 
     Returns:
         The inner HTML of the information page.
@@ -370,8 +377,16 @@ def public_information_body() -> str:
         mobile number and ticking a box to agree. The box is not ticked for
         you, and nothing is sent unless you tick it. We then send one
         confirmation text, and the interview itself starts when you text us.
-        There is no other way to join: we do not buy, rent, or import phone
-        number lists.</p>
+        That page is the only way a number reaches us: we do not buy, rent,
+        or import phone number lists.</p>
+
+        <div class="card">
+          <p><strong>Text messages are optional.</strong> Agreeing to receive
+          them is not a condition of taking part in this study, of completing
+          it, or of being paid for it. The same interview is also offered in a
+          web browser, and a participant who never opts in to text messages
+          completes the study and is compensated identically.</p>
+        </div>
 
         <div class="card">
           <p>By opting in you agree to receive text messages from the
@@ -400,6 +415,11 @@ def public_information_body() -> str:
         mental health screening questionnaire in character. No participant is
         asked about their own child or their own mental health.</p>
 
+        <p>The questionnaire is offered two ways, and both are the same
+        interview: by text message, for participants who opt in on the opt-in
+        page, or in a web browser for those who would rather not receive text
+        messages. Participants choose, and are paid the same either way.</p>
+
         <h2>What the messages look like</h2>
         <p class="muted">Hello! I am an AI assistant from
         {html.escape(ORG_NAME)}, messaging you to ask some questions about the
@@ -414,8 +434,12 @@ def public_information_body() -> str:
           <li>Phone numbers are used only to conduct the conversation. They
               are not sold, rented, or shared with third parties, and are not
               used for marketing.</li>
-          <li>A number reaches us only because someone texted us. It is
-              hashed on arrival and the number itself is never stored.</li>
+          <li>A number reaches us only because someone entered it on the
+              opt-in page and ticked the box. It is hashed on arrival and
+              the number itself is never stored.</li>
+          <li>Agreeing to receive text messages is never required to take
+              part or to be paid; the same interview runs in a browser for
+              anyone who prefers that.</li>
         </ul>
 
         <p class="muted">Taking part through Prolific? Open the study from

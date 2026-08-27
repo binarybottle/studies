@@ -101,9 +101,15 @@ anything first.</p>
 
 <p>The box above is not ticked for you, and nothing is sent unless you tick it.
 When you opt in we send one confirmation text. The conversation itself begins
-when you text {number} yourself. Opting in is not required to read this page,
-and consenting to receive text messages is not a condition of any purchase or
-of taking part in any other {org} activity.</p>
+when you text {number} yourself.</p>
+
+<h2>Text messages are optional</h2>
+<p><strong>Consenting to receive text messages is not a condition of any
+purchase, of taking part in our research studies, of completing one, or of
+being paid for one.</strong> Every study in this program is also offered in a
+web browser. A participant who never opts in to text messages takes part,
+completes the study, and receives identical compensation. Opting in is not
+required to read this page.</p>
 
 <h2>What the program is</h2>
 <p>An automated interviewer conducts a standardized questionnaire by text
@@ -126,6 +132,9 @@ own child or their own mental health.</p>
   <li>Message and data rates may apply. We do not charge for
       participation.</li>
   <li>Reply STOP at any time to opt out. Reply HELP for help.</li>
+  <li>Opting in is optional: it is not a condition of taking part in any
+      study, of completing one, or of being paid. The same study is offered
+      in a web browser.</li>
   <li>Phone numbers are used only to conduct the conversation. They are not
       sold, rented, or shared with third parties, and are not used for
       marketing.</li>
