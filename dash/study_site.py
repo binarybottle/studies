@@ -900,8 +900,11 @@ async def chat_page(pid: str) -> HTMLResponse:
         Some questions ask about difficult topics; you are answering about a
         fictional child. Expect {html.escape(DURATION_TEXT)}.</p>
 
-        <div id="log" aria-live="polite" style="min-height:12rem; padding:0.5rem 0;
-             border-top:1px solid currentColor; margin-top:1rem;">
+        <div id="log" aria-live="polite"
+             style="min-height:12rem; max-height:60vh; overflow-y:auto;
+                    padding:0.75rem 0; border-top:1px solid currentColor;
+                    border-bottom:1px solid currentColor; margin-top:1rem;
+                    overscroll-behavior:contain;">
           <p class="muted" id="status">Connecting&hellip;</p>
         </div>
 
@@ -933,13 +936,15 @@ async def chat_page(pid: str) -> HTMLResponse:
           }}
           if (who === "agent") p.style.fontWeight = "500";
           log.appendChild(p);
-          p.scrollIntoView({{ block: "end" }});
+          log.scrollTop = log.scrollHeight;
         }}
 
         function enable(on) {{
           entry.disabled = !on;
           send.disabled = !on;
-          if (on) entry.focus();
+          // preventScroll matters: without it, returning focus to the box
+          // scrolls the document back up and the transcript appears to jump.
+          if (on) entry.focus({{ preventScroll: true }});
         }}
 
         async function call(path, body) {{
@@ -985,10 +990,19 @@ async def chat_page(pid: str) -> HTMLResponse:
           show("you", text);
           entry.value = "";
           enable(false);
+
+          const waiting = document.createElement("p");
+          waiting.className = "muted";
+          waiting.textContent = "\u2026";
+          log.appendChild(waiting);
+          log.scrollTop = log.scrollHeight;
+
           try {{
             const answered = await call("/api/chat/send", {{ pid: pid, content: text }});
+            waiting.remove();
             answered.messages.forEach(m => show("agent", m));
           }} catch (error) {{
+            waiting.remove();
             show("agent", error.message + " Your answer was not lost; try again.");
           }}
           enable(true);
