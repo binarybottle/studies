@@ -231,8 +231,18 @@ Please do not re-open these without a reason; each cost real time.
 - **The browser channel is load-bearing for the campaign.** It began as a way
   to keep the study running while approval was pending. Since rejection 3 it
   is also the fact that makes "consent is not a required condition of service"
-  true. Removing it, or describing the study as text-message-only anywhere
-  public, re-creates the rejection.
+  true for DASH. Removing it, or describing the study as text-message-only
+  anywhere public, re-creates the rejection.
+- **DASH's two channels are equals; the program is not browser-based.** The
+  studies subdomain hosts any study, by whatever channel, and only DASH has a
+  browser interview. DASH's own pages may and do present SMS and browser as
+  two equal ways to take part. Program-level pages —
+  the opt-in page, `sms-terms/`, `sms-privacy/` — and the campaign fields
+  state the principle (messaging consent is never required to take part or be
+  paid; every study offers a route without it) and cite DASH's browser
+  interview only as the current instance. Wording them as if every study were
+  browser-backed commits studies nobody has designed, which is the mirror of
+  the mistake of wording them as if DASH were the only study.
 
 ## How to help me
 

@@ -383,9 +383,10 @@ def public_information_body() -> str:
         <div class="card">
           <p><strong>Text messages are optional.</strong> Agreeing to receive
           them is not a condition of taking part in this study, of completing
-          it, or of being paid for it. The same interview is also offered in a
-          web browser, and a participant who never opts in to text messages
-          completes the study and is compensated identically.</p>
+          it, or of being paid for it. The study is offered two ways, and they
+          are the same interview: by text message, or in a web browser.
+          Participants choose. A participant who never opts in to text
+          messages completes the study and is compensated identically.</p>
         </div>
 
         <div class="card">

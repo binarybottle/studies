@@ -26,6 +26,26 @@ Two causes, and only one of them is in this file:
    interview runs in a web browser, and a participant who never opts in is
    paid identically. Fields 3 and 5 now say so.
 
+**Scope, when editing these fields.** The campaign is filed at program level
+and covers studies that do not exist yet. DASH offers SMS and browser as two
+equal ways to take part, and its own pages say so — but that is DASH's design,
+not a promise the program can make on behalf of studies nobody has planned.
+The studies subdomain hosts any study, by whatever channel. So the
+program-level pages and fields state the **principle** — messaging consent is
+never a condition of participation or payment, and every study provides some
+way to take part without it — and offer DASH's browser interview as the
+current instance. Do not restore wording that commits every future study to a
+browser channel.
+
+**And keep the program-level text free of perishable phrases.** The website
+pages outlive any one study, and nobody edits a CMS page on the day a study
+ends. "The study running now" was exactly such a phrase and has been removed:
+the program pages state the rule and point at each study's own information
+page, which is where a concrete answer belongs because it disappears with the
+study. This filing may name DASH — a submission is reviewed as a snapshot —
+but it names it as "the study this campaign is being registered for" rather
+than as whatever happens to be running.
+
 ---
 
 ## 1. Application Name
@@ -47,10 +67,12 @@ automated interviewer conducts a standardized questionnaire by text message.
 Messages consist of questionnaire items and replies to what the participant
 sends. No marketing or promotional messages are ever sent from this number.
 Participants opt in on our published opt-in page before any message is sent to
-them. Text messaging is one of two ways to take part: the identical interview
-is also offered in a web browser, so consenting to receive text messages is
-never a condition of taking part in a study, of completing one, or of being
-compensated for one. The current study is a pilot test of the messaging
+them. Consenting to receive text messages is never a condition of taking part
+in a study, of completing one, or of being compensated for one: no study in
+this program requires messaging in order to participate, and each provides a
+way to take part without it. The DASH pilot, the study this campaign is being
+registered for, is offered two ways — by text message, or as the identical
+interview in a web browser — and participants choose. The current study is a pilot test of the messaging
 system, run in preparation for a research study that has not yet begun and for
 which the Child Mind Institute will apply for Institutional Review Board
 review. Each
@@ -109,13 +131,16 @@ rent, or import phone number lists.
 
 **Consent to receive text messages is not a required condition of service.**
 It is not a condition of any purchase, of taking part in a study, of
-completing one, or of being paid for one. Every study in this program is
-offered two ways, and they are the same interview: by text message for
-participants who opt in on the page above, or in a web browser for those who
-prefer not to receive text messages. Participants choose, and are compensated
-identically either way. A participant who never opts in completes the study
-and is paid in full. The opt-in page, the study site's public information
-page, and the SMS terms each state this in those terms.
+completing one, or of being paid for one. No study in this program requires a
+participant to receive text messages in order to participate or to be
+compensated, and each provides a way to take part without them.
+
+For the DASH pilot — the study this campaign is being registered for — that
+way is a web browser: the same interview, the same questions, run at the study
+site rather than over SMS. The two are offered as equals and participants
+choose. A participant who never opts in to text messages completes the study
+and is paid in full, identically to one who does. The opt-in page, the study
+site's public information page, and the SMS terms each state this.
 
 **On the confirmation message and approval order.** Carriers filter outbound
 A2P messages until the campaign is approved, so the confirmation cannot

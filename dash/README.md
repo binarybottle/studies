@@ -98,12 +98,17 @@ day approval lands, set it to `1` and restart the container; nothing else
 changes.
 
 **The browser channel is a compliance requirement, not just a convenience.**
-The A2P campaign filing tells TCR that consenting to receive text messages is
-not a condition of taking part or of being paid, and that claim is true only
-because `/chat` runs the same interview. The campaign was rejected on 26
-August 2026 for the opposite reading. Do not remove the browser channel, and
-do not reword the site to describe the study as text-message-only — see
-[Configuration](#configuration--dashenv) and `optin/A2P_submission.md`.
+DASH offers the two channels as equals, and the A2P campaign filing tells TCR
+that messaging consent is never a condition of taking part or of being paid.
+For this study that claim is true only because `/chat` runs the same
+interview. The campaign was rejected on 26 August 2026 for the opposite
+reading. Do not remove the browser channel, and do not reword the site to
+describe the study as text-message-only — see `optin/A2P_submission.md`.
+
+A future study on this server is not obliged to use a browser for this; it is
+obliged to offer some route that does not require receiving text messages.
+The program-level pages are worded around that principle rather than around
+DASH's mechanism.
 
 The `channel` column in the export records which one each participant
 actually used.
