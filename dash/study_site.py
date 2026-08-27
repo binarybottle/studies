@@ -156,8 +156,14 @@ RETELL_API_KEY = os.environ.get("RETELL_API_KEY", "")
 # Not a secret: an agent id is useless without the key, and this repository
 # holds one study, whose agent this is. Defaulting it means one fewer blank
 # to fill in on a server, and one fewer way for a deploy to come up mute.
+#
+# Importing a flow in the Retell dashboard creates a NEW agent rather than a
+# new version of the existing one, so the account accumulates agents with
+# identical names and this id silently stops pointing at the live flow. If
+# the agent behaves like an older version of itself, check that here first.
+# Prefer editing the agent in the dashboard over importing.
 RETELL_AGENT_ID = os.environ.get(
-    "RETELL_AGENT_ID", "agent_ffd9f3ee004a2f91bd92bbc378"
+    "RETELL_AGENT_ID", "agent_52cce77d02d3721f680b1194f5"
 )
 RETELL_CHAT_URL = "https://api.retellai.com/create-chat"
 RETELL_CHAT_COMPLETION_URL = "https://api.retellai.com/create-chat-completion"
