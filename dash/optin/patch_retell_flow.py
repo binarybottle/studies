@@ -70,9 +70,9 @@ STUDY_HOST = "https://dash.study.childmind.org"
 # verbatim rule in the global prompt, which is how this flow already pins its
 # other fixed answers. 152 GSM-7 units, one segment.
 HELP_REPLY = (
-    "Child Mind Institute: DASH research study messages. "
+    "Child Mind Institute: DASH research study. "
     f"Help: {site.CONTACT_EMAIL}. Message and data rates may apply. "
-    "Reply STOP to stop messages."
+    "Reply STOP to stop receiving messages."
 )
 HELP_RULE = (
     "\n## SMS keywords\n"

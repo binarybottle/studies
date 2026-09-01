@@ -533,6 +533,9 @@ async def start(
     PROLIFIC_PID: str | None = None,
     STUDY_ID: str | None = None,
     SESSION_ID: str | None = None,
+    pid: str | None = None,
+    study_id: str | None = None,
+    session_id: str | None = None,
 ):
     """Entry point registered as the Prolific external study URL.
 
@@ -546,15 +549,29 @@ async def start(
     before the query parameters were configured. They are shown an
     explanation rather than a validation error.
 
+    Query parameters are case sensitive, and the names are editable in
+    Prolific's panel rather than fixed by it. A study configured with
+    lowercase names therefore sent every participant to the missing-identifier
+    page while looking correctly set up from the Prolific side. Both casings
+    are accepted so that a capitalization convention cannot take the study
+    down; the uppercase names remain what the study URL should use.
+
     Args:
         PROLIFIC_PID: Participant ID substituted by Prolific.
         STUDY_ID: Study ID substituted by Prolific.
         SESSION_ID: Session ID substituted by Prolific.
+        pid: Lowercase alias for ``PROLIFIC_PID``.
+        study_id: Lowercase alias for ``STUDY_ID``.
+        session_id: Lowercase alias for ``SESSION_ID``.
 
     Returns:
         A redirect to the appropriate stage, or the missing-identifier page
         when Prolific's identifiers are absent.
     """
+    PROLIFIC_PID = PROLIFIC_PID or pid
+    STUDY_ID = STUDY_ID or study_id
+    SESSION_ID = SESSION_ID or session_id
+
     if not PROLIFIC_PID:
         store.log_event("start_without_pid")
         return missing_identifier_page()
