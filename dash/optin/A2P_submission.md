@@ -71,14 +71,14 @@ https://matter.childmind.org/sms-terms/
 | --- | --- |
 | Opt-in page (cited in field 5) | `matter.childmind.org/studies/dash/opt-in/` |
 | Pilot information page | `matter.childmind.org/text-study/`, also `/studies/dash/` |
-| Opt-in form endpoint it posts to | `dash.studies.childmind.org/api/opt-in` |
-| Participant consent and interview flow | `dash.studies.childmind.org` |
+| Opt-in form endpoint it posts to | `dash.study.childmind.org/api/opt-in` |
+| Participant consent and interview flow | `dash.study.childmind.org` |
 | SMS privacy notice (field 6) | `matter.childmind.org/sms-privacy/` |
 | SMS terms (field 7) | `matter.childmind.org/sms-terms/` |
 
 The opt-in page is CMS content on the organization's domain. Its form posts
 to the study host, which is the part a reviewer can see if they inspect the
-page. That endpoint is now `dash.studies.childmind.org` — a Child Mind
+page. That endpoint is now `dash.study.childmind.org` — a Child Mind
 Institute hostname, resolving to the study server and serving over TLS, so a
 reviewer inspecting the form no longer sees a personal domain. `Caddyfile`
 serves both names; the participant flow moves to the same host per
@@ -170,7 +170,7 @@ again the day approval lands, before any participant sees the page.
 **6. Keep the browser channel working** Fields 3 and 5 tell TCR that a participant can complete a study without ever opting in to text messages. That is true only while `/chat` runs, so it is a compliance claim now and not just a convenience. Walk it once before submitting, with `SMS_ENABLED` unset:
 
 ```
-https://dash.studies.childmind.org/start?PROLIFIC_PID=test123456789012345678
+https://dash.study.childmind.org/start?PROLIFIC_PID=test123456789012345678
 ```
 
 **7. Still open with Retell:** whether TCR requires the confirmation to precede

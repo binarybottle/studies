@@ -120,7 +120,7 @@ OPTIN_PAGE_ORIGIN = os.environ.get("OPTIN_PAGE_ORIGIN", "https://matter.childmin
 # on a laptop rather than on the server, so this default is the value that
 # matters -- setting it in the droplet's .env changes nothing.
 OPTIN_API_URL = os.environ.get(
-    "OPTIN_API_URL", "https://dash.studies.childmind.org/api/opt-in"
+    "OPTIN_API_URL", "https://dash.study.childmind.org/api/opt-in"
 )
 
 # The exact checkbox wording. Stored verbatim with every consent, so it is

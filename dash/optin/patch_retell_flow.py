@@ -62,7 +62,7 @@ SILENCE_MS = 259_200_000  # 72 hours; the timer starts at the confirmation.
 # The two custom tools post to the study host. They live in the flow, so an
 # import overwrites whatever the dashboard says -- which is how a hostname
 # corrected by hand comes back wrong the next time the flow is imported.
-STUDY_HOST = "https://dash.studies.childmind.org"
+STUDY_HOST = "https://dash.study.childmind.org"
 
 # HELP is a keyword a carrier tests, so its answer cannot be improvised. Left
 # to the model it invented an address that exists nowhere. Stated as a

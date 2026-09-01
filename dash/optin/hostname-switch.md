@@ -1,13 +1,13 @@
 # Switching to the Child Mind Institute hostname
 
-Do this when the DNS record for `dash.studies.childmind.org` exists and
+Do this when the DNS record for `dash.study.childmind.org` exists and
 resolves to 167.71.248.46. Check first, because Caddy cannot get a certificate
 before it does — and ask the zone's own nameservers, not a cached resolver:
 
 ```bash
-dig +short dash.studies.childmind.org                      # expect 167.71.248.46
-dig +short @deb.ns.cloudflare.com dash.studies.childmind.org
-dig +short @deb.ns.cloudflare.com anything.studies.childmind.org   # proves the wildcard
+dig +short dash.study.childmind.org                      # expect 167.71.248.46
+dig +short @deb.ns.cloudflare.com dash.study.childmind.org
+dig +short @deb.ns.cloudflare.com anything.study.childmind.org   # proves the wildcard
 ```
 
 **The answer must be 167.71.248.46 itself.** If it comes back as a Cloudflare
@@ -24,15 +24,15 @@ Five places name the host, and missing one fails quietly rather than loudly.
 Already done in the repository; the site block serves both names:
 
 ```
-study.arnoklein.info, dash.studies.childmind.org {
+study.arnoklein.info, dash.study.childmind.org {
 ```
 
-Keeping the old name was deliberate while a study might have been running:
-participants mid-study would have had the old URL open and Prolific would have
-had it recorded against submissions in flight. Neither is true — no study has
-begun — and the opt-in page now posts to the new host, so the old name can be
-retired as soon as steps 4 and 5 are done. The documentation no longer refers
-to it.
+The retained name here is `study.arnoklein.info`, the personal domain, which
+still resolves and still serves. The old CMI name, `dash.studies.childmind.org`,
+was not retired deliberately — CMI IT swapped the wildcard on 1 Sep 2026, so it
+stopped resolving without a transition. Caddy holds no certificate for the new
+name until this step runs, so the site is reachable only on the personal domain
+until then.
 
 ```bash
 ssh arno@167.71.248.46 'cd ~/studies && git pull && \
@@ -48,7 +48,7 @@ thing the repository README warns against.
 `OPTIN_API_URL` in `dash/study_site.py`. Nothing to do on the droplet: the
 constant is read only by the page generator, which runs on a laptop, so a
 value set in the server's `.env` would never be seen. Already changed in the
-repository to `https://dash.studies.childmind.org/api/opt-in`.
+repository to `https://dash.study.childmind.org/api/opt-in`.
 
 ## 3. The opt-in page — regenerate and republish
 
@@ -59,38 +59,39 @@ regenerate rather than editing it:
 python dash/optin/build_optin_page.py ~/Software/matter-website/opt-in.html
 ```
 
-Commit and push `matter-website`. Until this is done the published form still
-posts to the old hostname, which keeps working only while the Caddyfile serves
-both names.
+Commit and push `matter-website`. **This is now urgent, not optional.** CMI IT
+swapped the wildcard rather than adding to it, so `dash.studies.childmind.org`
+NXDOMAINs — the published form posts to a host that no longer exists, and every
+opt-in submission fails in the browser until this step is done.
 
 ## 4. Retell — the two tool URLs
 
 Both custom tools post to the study host and are configured in the Retell
 dashboard, not in either repository:
 
-- `verify_code` -> `https://dash.studies.childmind.org/api/verify-code`
-- `complete_study` -> `https://dash.studies.childmind.org/api/complete`
+- `verify_code` -> `https://dash.study.childmind.org/api/verify-code`
+- `complete_study` -> `https://dash.study.childmind.org/api/complete`
 
 These live in the flow itself, not only in the dashboard, so an import
 overwrites a correction made by hand. `patch_retell_flow.py` rewrites them
 too; if you edit them in the dashboard instead, remember that the next import
 undoes it.
 
-They keep working on the old hostname while the Caddyfile serves both, so
-this is not urgent on the day — but a chat that cannot reach `verify_code`
-refuses to start the interview, by design, so leaving it undone eventually
-stops every session.
+The old hostname no longer resolves, so these are broken right now rather than
+merely stale. A chat that cannot reach `verify_code` refuses to start the
+interview, by design, so every session stops until this is done.
 
 ## 5. Prolific — the study URL
 
 Change it to:
 
 ```
-https://dash.studies.childmind.org/start
+https://dash.study.childmind.org/start
 ```
 
-No query string; Prolific appends the identifiers itself. Submissions already
-in flight keep working because the old hostname still resolves.
+No query string; Prolific appends the identifiers itself. There is no grace
+period: the old hostname was removed from DNS rather than kept alongside the
+new one, so any submission still pointing at it fails immediately.
 
 ## Doing this while a campaign is under review
 

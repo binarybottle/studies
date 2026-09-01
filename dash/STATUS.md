@@ -27,8 +27,8 @@ affected.
 | Thing | Value |
 | --- | --- |
 | Study SMS number (DID) | +1 (507) 431-7807 |
-| Study site (participant flow) | https://dash.studies.childmind.org |
-| Prolific study URL | https://dash.studies.childmind.org/start — confirm it is set to this in Prolific |
+| Study site (participant flow) | https://dash.study.childmind.org |
+| Prolific study URL | https://dash.study.childmind.org/start — confirm it is set to this in Prolific |
 | Opt-in page (cited in the campaign) | https://matter.childmind.org/studies/dash/opt-in/ |
 | A2P campaign / program name | Child Mind Institute MATTER Lab |
 | SMS terms | https://matter.childmind.org/sms-terms/ |
@@ -138,7 +138,7 @@ published under it should be worded as if DASH were the only one.
 | --- | --- | --- |
 | Twilio, via Retell | Whether the confirmation SMS must precede the participant's first inbound message | If not, the opt-in form drops the phone number field and goes back to a checkbox alone, restoring the property that a number only ever reaches us because someone texted us. Retell is opening a support ticket rather than guessing. |
 | — | Three questions about `create-sms-chat` | **Answered 25 Aug 2026.** `text` is ignored, the agent's begin message decides; the participant's reply lands in the chat that call opened; no timer starts at creation, but auto-close runs from the last message, which is the confirmation. All three match the patched flow. |
-| — | DNS record `*.studies.childmind.org` → 167.71.248.46 | **Done, 25 Aug 2026.** Resolves at the authoritative nameservers and at 1.1.1.1, wildcard confirmed, grey cloud. The hostname switch is now ours to do: see `dash/optin/hostname-switch.md`. |
+| — | DNS record `*.study.childmind.org` → 167.71.248.46 | **Done, 25 Aug 2026.** Resolves at the authoritative nameservers and at 1.1.1.1, wildcard confirmed, grey cloud. The hostname switch is now ours to do: see `dash/optin/hostname-switch.md`. |
 | CMI IT | Cloudflare bot-challenge exemption on matter.childmind.org | **This caused rejection 3.** Re-checked 26 Aug 2026: `/studies/dash/opt-in/`, `/sms-terms/`, `/sms-privacy/` and `/text-study/` all return 403 to a non-browser. The challenge is Super Bot Fight Mode on "definitely automated traffic". A skip rule exists and matches, but skips managed rules and rate limiting rather than SBFM, which is its own checkbox; and its expression covers `/studies/` only. It must cover all four paths, and skip SBFM. Nothing else can proceed until `curl` returns 200. |
 | TCR | Campaign approval | No SMS can be sent at all until this lands, including the confirmation message. |
 
@@ -169,11 +169,14 @@ Owned by us, in order:
 7. **Dry-run the participant path** in a browser with a fresh Prolific ID.
 8. **On approval:** verify a confirmation text actually arrives before any
    participant sees the page.
-9. **Switch hostnames.** DNS landed 25 Aug 2026 and `dash.studies.childmind.org`
-   is serving, so this is unblocked. `hostname-switch.md` is the runbook; four
-   places name the host and three fail quietly if missed. A rename to
-   `study.childmind.org` has been floated with CMI IT — if it happens, ask for
-   the new name to be *added* alongside the old rather than swapped.
+9. **Switch hostnames.** CMI IT renamed the wildcard to `*.study.childmind.org`
+   (singular) on 1 Sep 2026. It was *swapped*, not added: `*.studies` no longer
+   resolves at all. This repository was updated to the singular name on the same
+   day. `hostname-switch.md` is the runbook; four places name the host and three
+   fail quietly if missed. Two are still outstanding — see the blocking items
+   below — and until they are done `dash.study.childmind.org` resolves but does
+   not serve: Caddy holds no certificate for a name it was not configured with,
+   so TLS fails until the droplet is redeployed with the updated Caddyfile.
 
 **Note on `SMS_ENABLED`.** It is `1` on the droplet, which offers participants
 a text-message path that carriers will filter until the campaign is approved.
@@ -247,7 +250,7 @@ Please do not re-open these without a reason; each cost real time.
   true for DASH. Removing it, or describing the study as text-message-only
   anywhere public, re-creates the rejection.
 - **DASH's two channels are equals; the program is not browser-based.** The
-  studies subdomain hosts any study, by whatever channel, and only DASH has a
+  study subdomain hosts any study, by whatever channel, and only DASH has a
   browser interview. DASH's own pages may and do present SMS and browser as
   two equal ways to take part. Program-level pages —
   the opt-in page, `sms-terms/`, `sms-privacy/` — and the campaign fields

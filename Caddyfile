@@ -14,7 +14,7 @@
 # points at it any more: participants have it open mid-session, Prolific has
 # it recorded against submissions in flight, and the published opt-in page
 # posts its form there. Retire it a study later, not on switch day.
-study.arnoklein.info, dash.studies.childmind.org {
+study.arnoklein.info, dash.study.childmind.org {
 	# Container name from compose.yml, resolved on the compose network.
 	reverse_proxy dash:8000
 
