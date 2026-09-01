@@ -36,8 +36,26 @@ until then.
 
 ```bash
 ssh arno@167.71.248.46 'cd ~/studies && git pull && \
-    docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile'
+    docker compose up -d --force-recreate caddy'
 ssh arno@167.71.248.46 'cd ~/studies && docker compose logs caddy | tail -20'
+```
+
+Use `--force-recreate`, not `caddy reload`. The Caddyfile is a single-file bind
+mount, so it binds the inode; `git pull` replaces the file rather than editing
+it in place, and the container keeps reading the old inode. `reload` then says
+`config is unchanged` and exits 0 while the old hostname is still live. Confirm
+the container actually sees the new name before trusting it:
+
+```bash
+ssh arno@167.71.248.46 'cd ~/studies && docker compose exec -T caddy \
+    grep childmind /etc/caddy/Caddyfile'
+```
+
+Then watch for the certificate, which will not exist until the recreate:
+
+```bash
+ssh arno@167.71.248.46 'cd ~/studies && docker compose logs caddy --since 5m' \
+    | grep -i "certificate obtained"
 ```
 
 Commit and push first: the droplet is a checkout, and copying files up is the

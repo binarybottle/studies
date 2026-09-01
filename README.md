@@ -229,9 +229,21 @@ only be edited there.
 | `study_site.py`, `store.py` | `docker compose up -d --build dash` |
 | `requirements.txt`, `Dockerfile` | `docker compose up -d --build dash` (slow — reinstalls wheels) |
 | `dash/.env` | `docker compose up -d dash` — no build; recreates the container so it re-reads the file. Edit it on the droplet: it is not in the repository |
-| `Caddyfile` | `docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile` — it is mounted read-only, so no rebuild at all |
+| `Caddyfile` | `docker compose up -d --force-recreate caddy` — **not** `caddy reload`, see below |
 | `compose.yml` | `docker compose up -d` |
 | Nothing; just wedged | `docker compose restart dash` |
+
+**Why the Caddyfile needs a recreate and not a reload.** `compose.yml` mounts
+it as a single file, `./Caddyfile:/etc/caddy/Caddyfile`, and a single-file bind
+mount binds the *inode*, not the path. `git pull` does not write the file in
+place — it writes a replacement and renames it over the old one, which gives
+the file a new inode. The container goes on reading the old inode, which is
+still on disk because the mount holds it open. So after a pull the running
+Caddy sees the previous contents, and `caddy reload` answers `config is
+unchanged` and exits 0. It looks like it worked. It did nothing. Recreating the
+container re-resolves the path and picks up the new file. Editing the Caddyfile
+in place on the droplet keeps the inode and *does* work with `reload`, which is
+why this is easy to miss.
 
 `--build dash` rebuilds only the dash image and recreates that one container.
 The `dash_data` volume carries `study.db` across the rebuild, so participant
