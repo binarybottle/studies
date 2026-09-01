@@ -31,10 +31,11 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import study_site as site  # noqa: E402
 
 INTERVIEW_GREETING = (
-    "Hello! I am an AI assistant from the Child Mind Institute MATTER Lab, "
-    "messaging you to ask some questions about the child described in the "
-    "persona you were given, as part of the DASH Mental Health Screener. "
-    "Reply STOP at any time to end."
+    "Hello! I am an AI assistant from the Child Mind Institute, messaging "
+    "you to ask some questions about the child described in the persona you "
+    "were given, as part of the DASH Mental Health Screener. Message and "
+    "data rates may apply. Reply STOP at any time to stop receiving "
+    "messages, or HELP for help."
 )
 # The registered confirmation, then what to do next. Keeping the registered
 # text as a verbatim prefix means the message a reviewer tests still opens
@@ -69,9 +70,9 @@ STUDY_HOST = "https://dash.study.childmind.org"
 # verbatim rule in the global prompt, which is how this flow already pins its
 # other fixed answers. 152 GSM-7 units, one segment.
 HELP_REPLY = (
-    "Child Mind Institute MATTER Lab: DASH research study messages. "
-    f"Help: {site.CONTACT_EMAIL}. Msg & data rates may apply. "
-    "Reply STOP to cancel."
+    "Child Mind Institute: DASH research study messages. "
+    f"Help: {site.CONTACT_EMAIL}. Message and data rates may apply. "
+    "Reply STOP to stop messages."
 )
 HELP_RULE = (
     "\n## SMS keywords\n"

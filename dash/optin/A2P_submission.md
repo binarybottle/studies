@@ -7,7 +7,7 @@ this file is a worksheet.
 
 ## 1. Application Name
 
-Child Mind Institute MATTER Lab
+Child Mind Institute
 
 ---
 
@@ -19,7 +19,7 @@ Customer Care
 
 ## 3. Description for the use of sms
 
-The Child Mind Institute MATTER Lab runs research studies in which an automated interviewer conducts a standardized questionnaire by text message. Messages consist of questionnaire items and replies to what the participant sends. No marketing or promotional messages are ever sent from this number. Participants opt in on our published opt-in page before any message is sent to them. Consenting to receive text messages is never a condition of taking part in a study, of completing one, or of being compensated for one: no study in this program requires messaging in order to participate, and each provides a way to take part without it. The DASH pilot, the study this campaign is being registered for, is offered two ways — by text message, or as the identical interview in a web browser — and participants choose. The current study is a pilot test of the messaging system, run in preparation for a research study that has not yet begun and for which the Child Mind Institute will apply for Institutional Review Board review. Each participant is given a short written persona describing a fictional parent and a fictional child, and answers a standardized mental health screening questionnaire in character as that fictional parent. Participants are never asked about their own child, their own family, or their own mental health.
+The Child Mind Institute runs research studies in which an automated interviewer conducts a standardized questionnaire by text message. Messages consist of questionnaire items and replies to what the participant sends. No marketing or promotional messages are ever sent from this number. Participants opt in on our published opt-in page before any message is sent to them. Consenting to receive text messages is never a condition of taking part in a study, of completing one, or of being compensated for one: no study in this program requires messaging in order to participate, and each provides a way to take part without it. The DASH pilot, the study this campaign is being registered for, is offered two ways — by text message, or as the identical interview in a web browser — and participants choose. The current study is a pilot test of the messaging system, run in preparation for a research study that has not yet begun and for which the Child Mind Institute will apply for Institutional Review Board review. Each participant is given a short written persona describing a fictional parent and a fictional child, and answers a standardized mental health screening questionnaire in character as that fictional parent. Participants are never asked about their own child, their own family, or their own mental health.
 
 ---
 
@@ -27,23 +27,22 @@ The Child Mind Institute MATTER Lab runs research studies in which an automated 
 
 **Sample A — welcome / confirmation, sent the moment consent is recorded**
 
-Child Mind Institute MATTER Lab: You are opted in to research study messages.
-Msg & data rates may apply. Msg freq varies. Reply STOP to cancel, HELP for
-help.
+Child Mind Institute: You have opted in to receive text messages for this
+research study. Message and data rates may apply, and message frequency
+varies. Reply STOP at any time to stop receiving messages, or HELP for help.
 
 **Sample B — first message of a session**
 
 Hello! I am an AI assistant from the Child Mind Institute, messaging you to
 ask some questions about the child described in the persona you were given, as
-part of the DASH Mental Health Screener. The first few questions ask about
-Alex's physical health. Msg & data rates may apply. Reply STOP to
-cancel, HELP for help.
+part of the DASH Mental Health Screener. Message and data rates may apply.
+Reply STOP at any time to stop receiving messages, or HELP for help.
 
 ---
 
 ## 5. How do end-users consent to receive messages?
 
-End-users opt in to receive SMS from the Child Mind Institute MATTER Lab by visiting https://matter.childmind.org/studies/dash/opt-in/ and checking an optional, unchecked box that reads: "I agree to receive text messages from the Child Mind Institute MATTER Lab at this number. Msg & data rates may apply. Msg freq varies. Reply STOP to cancel, HELP for help." Our privacy policy (https://matter.childmind.org/sms-privacy/) and terms (https://matter.childmind.org/sms-terms/) are linked directly beside that checkbox. Upon consent, the user receives a confirmation SMS: "Child Mind Institute MATTER Lab: You are opted in to research study messages. Msg & data rates may apply. Msg freq varies. Reply STOP to cancel, HELP for help."
+End-users opt in to receive SMS from the Child Mind Institute by visiting https://matter.childmind.org/studies/dash/opt-in/ and checking an optional, unchecked box that reads: "I agree to receive text messages from the Child Mind Institute at this number. Message and data rates may apply, and message frequency varies. Reply STOP at any time to stop receiving messages, or HELP for help." Our privacy policy (https://matter.childmind.org/sms-privacy/) and terms (https://matter.childmind.org/sms-terms/) are linked directly beside that checkbox. Upon consent, the user receives a confirmation SMS: "Child Mind Institute: You have opted in to receive text messages for this research study. Message and data rates may apply, and message frequency varies. Reply STOP at any time to stop receiving messages, or HELP for help."
 
 The box is unchecked when the page loads and the submission is refused unless it arrives checked. The page is publicly reachable with no login and no query parameters, and displays the program number +1 (507) 431-7807 before any interaction. Testers recruited through the Prolific research platform reach the same page and check the same box. The number entered is used to send the confirmation message and is then stored only as an irreversible hash. This page is the only route by which a phone number reaches us; we do not buy, rent, or import phone number lists.
 
@@ -95,15 +94,15 @@ from the study site's constants — regenerate with
 rather than editing it there, so the disclosure on the page and the disclosure
 recorded with each consent cannot drift apart.
 
-**2. Get every filed URL exempted from Cloudflare's bot challenge.** This is
-the blocker. As of 26 August 2026 all four still return 403 to any client that
-is not a real browser — the opt-in page in field 5 and both policy pages in
-fields 6 and 7. A reviewer or automated checker gets a challenge page rather
-than the disclosures, which looks exactly like "the opt-in information is not
-there."
+**2. Get every filed URL exempted from Cloudflare's bot challenge.**
+~~This is the blocker.~~ **Resolved, 1 Sep 2026.** All four filed URLs now
+return 200 to a non-browser client, verified from outside. CMI IT added Super
+Bot Fight Mode to the skipped components and extended the rule's expression to
+all four paths. Re-run the check below before submitting anyway — it is what
+caused rejection 3, and a browser check cannot detect a regression.
 
-The previous request was made and did not work, for two specific reasons worth
-repeating to whoever administers the zone:
+The original request failed for two specific reasons, kept here because they
+are what to repeat if the exemption is ever rebuilt:
 
 - The existing skip rule skips **managed rules and rate limiting**, not
   **Super Bot Fight Mode**, which is a separate checkbox and is what is
@@ -124,8 +123,8 @@ for u in https://matter.childmind.org/studies/dash/opt-in/ \
 done
 ```
 
-A 403 means the reviewer will see one too. Do not resubmit until this passes:
-it is what caused rejection 3, and a browser check cannot detect it.
+A 403 means the reviewer will see one too. As of 1 Sep 2026 all four return
+200.
 
 **3. Configure the send, and fix the agent's begin message.** The send is
 configured — `RETELL_API_KEY` is set on the droplet and `SMS_SEND_TOKEN` falls

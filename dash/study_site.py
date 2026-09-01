@@ -104,7 +104,7 @@ DURATION_TEXT = "30 to 60 minutes"
 # URL matches what they read against the campaign in front of them, so the
 # page has to call the program what the application calls it. The campaign
 # covers the lab's participant messaging as a whole, not one study.
-PROGRAM_NAME = "Child Mind Institute MATTER Lab"
+PROGRAM_NAME = "Child Mind Institute"
 
 # What this particular study calls itself, on its own pages. A different fact
 # from the program name: one campaign covers many studies.
@@ -134,14 +134,15 @@ OPTIN_API_URL = os.environ.get(
 # notice; the organization-wide policy is a general document that does not
 # mention messaging at all.
 OPTIN_DISCLOSURE = (
-    "I agree to receive text messages from the Child Mind Institute MATTER "
-    "Lab at this number. Msg & data rates may apply. Msg freq varies. "
-    "Reply STOP to cancel, HELP for help."
+    "I agree to receive text messages from the Child Mind Institute at this "
+    "number. Message and data rates may apply, and message frequency varies. "
+    "Reply STOP at any time to stop receiving messages, or HELP for help."
 )
 CONFIRMATION_SMS = (
-    "Child Mind Institute MATTER Lab: You are opted in to research study "
-    "messages. Msg & data rates may apply. Msg freq varies. "
-    "Reply STOP to cancel, HELP for help."
+    "Child Mind Institute: You have opted in to receive text messages for "
+    "this research study. Message and data rates may apply, and message "
+    "frequency varies. Reply STOP at any time to stop receiving messages, "
+    "or HELP for help."
 )
 
 # Outbound send. No credentials ship with this repo: the provider endpoint is
@@ -185,7 +186,7 @@ SMS_ENABLED = os.environ.get("SMS_ENABLED", "").strip().lower() in {"1", "true",
 # way. That keeps both channels the same shape -- speak, listen, branch --
 # rather than making the browser send a throwaway message to get going.
 WEB_OPENING = (
-    "Hello! I am an AI assistant from the Child Mind Institute MATTER Lab. "
+    "Hello! I am an AI assistant from the Child Mind Institute. "
     "I am going to ask some questions about the child described in the "
     "persona you were given, as part of the DASH Mental Health Screener. "
     "Shall we begin? Please reply yes or no."
@@ -199,7 +200,7 @@ SMS_SEND_TOKEN = os.environ.get("SMS_SEND_TOKEN", "") or RETELL_API_KEY
 # strangers. These caps are per rolling day.
 MAX_OPTINS_PER_NUMBER = 3
 MAX_OPTINS_PER_IP = 10
-LAB_NAME = os.environ.get("LAB_NAME", "Child Mind Institute MATTER Lab")
+LAB_NAME = os.environ.get("LAB_NAME", "Child Mind Institute")
 
 PROLIFIC_COMPLETE_URL = "https://app.prolific.com/submissions/complete?cc={code}"
 
