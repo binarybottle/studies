@@ -16,11 +16,11 @@ own mental health. It is a test of whether the
 software works, not a research study; a research study may follow and has not
 yet been submitted for Institutional Review Board review.
 
-The blocker for the last several weeks has been the **A2P 10DLC campaign** —
-the carrier registration every organization must pass before sending any SMS
-in the US. It has been rejected three times. Nothing can launch by text
-message until it is approved; the browser channel works today and is not
-affected.
+The blocker for the last several weeks was the **A2P 10DLC campaign** — the
+carrier registration every organization must pass before sending any SMS in
+the US. It was rejected three times and **was approved on 7 September 2026**.
+Both channels now work: the browser interview, which was never affected, and
+the text-message path, verified end to end on the day approval landed.
 
 ## Key facts
 
@@ -30,7 +30,8 @@ affected.
 | Study site (participant flow) | https://dash.study.childmind.org |
 | Prolific study URL | https://dash.study.childmind.org/start — confirm it is set to this in Prolific |
 | Opt-in page (cited in the campaign) | https://matter.childmind.org/studies/dash/opt-in/ |
-| A2P campaign / program name | Child Mind Institute MATTER Lab |
+| A2P campaign / program name | Child Mind Institute — the filed Application Name, rebranded from "Child Mind Institute MATTER Lab" on 1 Sep 2026. The page, the consent record, the confirmation SMS and the campaign must all use this one name. |
+| Retell chat agent (both channels) | `agent_52cce77d02d3721f680b1194f5` ("DASH-MH-P-GS TEXT"), conversation flow `conversation_flow_596a14d64b4e` |
 | SMS terms | https://matter.childmind.org/sms-terms/ |
 | SMS privacy notice | https://matter.childmind.org/sms-privacy/ |
 | Pilot information page | https://matter.childmind.org/text-study/ |
@@ -46,9 +47,10 @@ Two code repositories:
   Docker, behind Caddy for TLS. One container per study; `dash/` is this
   study.
 - **matter-website** — the MATTER Lab site, Jekyll on GitHub Pages, serving
-  matter.childmind.org. Hosts the opt-in page and the two policy pages. Note
-  it is behind a Cloudflare bot challenge that returns 403 to anything that
-  is not a real browser, so it cannot be checked with curl.
+  matter.childmind.org. Hosts the opt-in page and the two policy pages. It sits
+  behind a Cloudflare bot challenge that used to return 403 to anything that
+  was not a real browser; the four filed paths are now exempted, and the rest
+  of the site still is not.
 
 ## How the flow works now
 
@@ -57,8 +59,8 @@ Two code repositories:
    part; it sends no messages.
 3. `/begin` offers the interview. `SMS_ENABLED` decides: unset, it offers the
    browser only; set, it offers both, device-appropriate one first, with both
-   always available. **It is currently set to 1 on the droplet**, so both are
-   offered — see the note under *What is left to do*.
+   always available. **It is set to 1 on the droplet**, so both are offered,
+   which is now correct — the campaign is approved.
 4. **By text:** the opt-in page on matter.childmind.org collects a mobile
    number and an **unchecked** checkbox carrying the SMS disclosure.
    Submitting posts to `POST /api/opt-in` on the study site, which records the
@@ -82,16 +84,17 @@ submission.
 > consent cannot be a required condition for service or transaction
 > completion.
 
-Two causes, both now addressed in the repository but **one still blocked on
-CMI IT**:
+Two causes, **both since fixed**; the fourth submission was approved on 7
+September 2026.
 
-1. **The filed URLs return 403 to the reviewer.** Checked 26 Aug 2026: the
-   opt-in page, `/sms-terms/`, `/sms-privacy/` and `/text-study/` all answer
+1. **The filed URLs returned 403 to the reviewer.** Checked 26 Aug 2026: the
+   opt-in page, `/sms-terms/`, `/sms-privacy/` and `/text-study/` all answered
    403 to any non-browser client. TCR fetches them with a script, so it saw
    challenge pages instead of disclosures. The existing Cloudflare skip rule
-   does not cover Super Bot Fight Mode and its expression covers `/studies/`
-   only. **Do not resubmit until `curl` returns 200 for all four** — this is
-   invisible from a browser.
+   did not cover Super Bot Fight Mode and its expression covered `/studies/`
+   only. Fixed by CMI IT; all four returned 200 to `curl` when re-checked on 7
+   Sep 2026. This was invisible from a browser, which is why it survived two
+   rounds of checking.
 2. **Everything we had filed said SMS was the only way to take part.** Field 5
    said "no other route to opting in exists"; the study site said "there is no
    other way to join"; `text-study/` said "to take part, opt in". All meant
@@ -125,72 +128,100 @@ opening it directly saw nothing.
    confirmation SMS, rather than treating "the participant texted us first"
    as the opt-in. → Built.
 
-The campaign is being resubmitted at **program level**, as the Child Mind
-Institute MATTER Lab's participant messaging, rather than as one DASH
-application. The opt-in page and both policy pages describe the program, not a
-single study; only the study site's own pages name the DASH pilot. One
-consequence: the campaign covers studies that do not exist yet, so nothing
-published under it should be worded as if DASH were the only one.
+The campaign was approved at **program level**, as the Child Mind Institute's
+participant messaging, rather than as one DASH application. The opt-in page and
+both policy pages describe the program, not a single study; only the study
+site's own pages name the DASH pilot. One consequence: the campaign covers
+studies that do not exist yet, so nothing published under it should be worded
+as if DASH were the only one.
 
 ## What is waiting on other people
 
 | Waiting on | What | Why it matters |
 | --- | --- | --- |
 | Twilio, via Retell | Whether the confirmation SMS must precede the participant's first inbound message | If not, the opt-in form drops the phone number field and goes back to a checkbox alone, restoring the property that a number only ever reaches us because someone texted us. Retell is opening a support ticket rather than guessing. |
-| — | Three questions about `create-sms-chat` | **Answered 25 Aug 2026.** `text` is ignored, the agent's begin message decides; the participant's reply lands in the chat that call opened; no timer starts at creation, but auto-close runs from the last message, which is the confirmation. All three match the patched flow. |
+| — | Three questions about `create-sms-chat` | **Answered 25 Aug 2026.** `text` is ignored, the agent's begin message decides; the participant's reply lands in the chat that call opened; no timer starts at creation, but auto-close runs from the last message, which is the confirmation. All three match the patched flow. `text` is not even a documented field — the ones that exist are `from_number`, `to_number`, `override_agent_id`, `override_agent_version`, `metadata` and `retell_llm_dynamic_variables`. |
+| — | Whether two chats can be open on one handset at once | **Yes, observed 7 Sep 2026.** A cold inbound text with no outbound chat open creates its own inbound chat; a later `create-sms-chat` to the same number opened a second, and both sat `ongoing`. Which one a subsequent reply reaches is undefined, and the code has to arrive in the chat the verification node is waiting in. Opt in first and text second, and do not mix the two orders in one test. |
 | — | DNS record `*.study.childmind.org` → 167.71.248.46 | **Done, 25 Aug 2026.** Resolves at the authoritative nameservers and at 1.1.1.1, wildcard confirmed, grey cloud. The hostname switch is now ours to do: see `dash/optin/hostname-switch.md`. |
-| CMI IT | Cloudflare bot-challenge exemption on matter.childmind.org | **This caused rejection 3.** Re-checked 26 Aug 2026: `/studies/dash/opt-in/`, `/sms-terms/`, `/sms-privacy/` and `/text-study/` all return 403 to a non-browser. The challenge is Super Bot Fight Mode on "definitely automated traffic". A skip rule exists and matches, but skips managed rules and rate limiting rather than SBFM, which is its own checkbox; and its expression covers `/studies/` only. It must cover all four paths, and skip SBFM. Nothing else can proceed until `curl` returns 200. |
-| TCR | Campaign approval | No SMS can be sent at all until this lands, including the confirmation message. |
+| CMI IT | Cloudflare bot-challenge exemption on matter.childmind.org | **This caused rejection 3. Resolved.** CMI IT added Super Bot Fight Mode to the skipped components and extended the rule's expression to all four paths. Re-verified 7 Sep 2026: `/studies/dash/opt-in/`, `/sms-terms/`, `/sms-privacy/` and `/text-study/` all return 200 to `curl`. A browser check cannot detect a regression here, so re-run the `curl` loop in `A2P_submission.md` rather than clicking the links. |
+| TCR | Campaign approval | **Approved 7 September 2026**, on the fourth submission. |
 
 ## What is left to do
 
 Owned by us, in order:
 
-1. **Chase CMI IT on the Cloudflare exemption.** Nothing else matters until
-   all four URLs return 200 to `curl`. See rejection 3 above.
+1. ~~**Chase CMI IT on the Cloudflare exemption.**~~ **Done.** All four filed
+   URLs return 200 to `curl`, re-verified 7 Sep 2026.
 2. ~~**Deploy the consent-wording changes and push `matter-website`.**~~
    **Done, 26 Aug 2026.** The droplet and this repository are both at the same
    commit, both hostnames serve the new wording, and `matter-website` is
-   pushed to `gh-pages`. The CMS pages cannot be verified from outside a
-   browser while the Cloudflare challenge stands.
+   pushed to `gh-pages`. The CMS pages could not be verified from outside a
+   browser until the Cloudflare exemption landed; they can be now.
 3. ~~**Put the Retell API key on the droplet.**~~ **Done.** It is set as
    `RETELL_API_KEY`; `SMS_SEND_TOKEN` stays unset and falls back to it. Do not
    set both — one secret under two names is how one goes stale.
-4. **Set the outbound agent's begin message** in the Retell dashboard to
-   exactly the confirmation text registered with the campaign:
-   *"Child Mind Institute MATTER Lab: You are opted in to research study
-   messages. Msg & data rates may apply. Msg freq varies. Reply STOP to
-   cancel, HELP for help."*
-5. **Resubmit the A2P campaign.** The field text is written and ready.
-6. **Check the Prolific completion paths.** The three codes are set on the
-   droplet (complete, attention-check failure, no-consent screen-out); what is
-   unverified is the action attached to each one in Prolific. Never a
-   rejection.
+4. ~~**Set the outbound agent's begin message.**~~ **Done, differently than
+   this item assumed.** There is no dashboard begin message to set: the flow's
+   start node emits `{{opening}}`, and the flow carries
+   `default_dynamic_variables = {"study_channel": "sms", "opening": …}` holding
+   the registered confirmation followed by the instruction to text the code.
+   SMS gets that by default; the browser overrides both variables with
+   `WEB_OPENING` and `study_channel: "web"`, which is what the start node's
+   first edge branches on. Changing the confirmation therefore means changing
+   `CONFIRMATION_SMS` **and** the flow's default, or the two drift.
+5. ~~**Resubmit the A2P campaign.**~~ **Approved 7 September 2026.**
+6. **Check the Prolific completion paths.** Still open, and now the main thing
+   between here and a live study. The three codes are set on the droplet and
+   the application emits them correctly (see below); what is unverified is the
+   action attached to each one in Prolific. Never a rejection.
 7. **Dry-run the participant path** in a browser with a fresh Prolific ID.
-8. **On approval:** verify a confirmation text actually arrives before any
-   participant sees the page.
-9. **Switch hostnames.** CMI IT renamed the wildcard to `*.study.childmind.org`
-   (singular) on 1 Sep 2026. It was *swapped*, not added: `*.studies` no longer
-   resolves at all. This repository was updated to the singular name on the same
-   day. `hostname-switch.md` is the runbook; four places name the host and three
-   fail quietly if missed. Two are still outstanding — see the blocking items
-   below — and until they are done `dash.study.childmind.org` resolves but does
-   not serve: Caddy holds no certificate for a name it was not configured with,
-   so TLS fails until the droplet is redeployed with the updated Caddyfile.
+8. ~~**On approval:** verify a confirmation text actually arrives.~~
+   **Verified 7 Sep 2026** — see *How the text channel was verified* below.
+9. ~~**Switch hostnames.**~~ **Done.** CMI IT renamed the wildcard to
+   `*.study.childmind.org` (singular) on 1 Sep 2026; it was *swapped*, not
+   added, so `*.studies` no longer resolves at all. All four places that name
+   the host now agree on the singular form — `Caddyfile`, `OPTIN_API_URL` in
+   `study_site.py`, and the flow's two function nodes — and
+   `dash.study.childmind.org` serves over TLS. `hostname-switch.md` remains the
+   runbook if it ever moves again.
 
-**Note on `SMS_ENABLED`.** It is `1` on the droplet, which offers participants
-a text-message path that carriers will filter until the campaign is approved.
-Harmless while no study is running, and it corroborates the campaign's claim
-that both channels exist. It must not still be `1` when participants arrive
-unless approval has landed.
+**Note on `SMS_ENABLED`.** It is `1` on the droplet, which is now correct: the
+campaign is approved and both channels are offered. Before approval this was a
+liability; it no longer is.
 
-## The agent flow, as of 25 August 2026
+## How the text channel was verified, 7 September 2026
 
-The patched flow is imported: the start node is the confirmation, the
-verification path is reachable, HELP has a fixed answer and auto-close is 72
-hours. **Check that the version is published** — the export reads
-`is_published: false`, which for a draft version means the live number may
-still be answering with the old flow.
+Approval alone did not make texting work — the number had never been bound to
+an SMS agent. `POST /create-sms-chat` failed with *"No outbound agent id set up
+for phone number"*, and inbound texts reached a number whose only agent was a
+**voice** agent, so nothing answered. Retell keeps SMS on separate fields from
+voice: `inbound_sms_agents` and `outbound_sms_agents`, which take a **chat**
+agent. Both are now bound to `agent_52cce77d02d3721f680b1194f5` at
+`agent_version: 2`, the published version.
+
+Both directions were then confirmed on the live number:
+
+- **Inbound** — a text to +1 (507) 431-7807 opened a chat and the agent replied
+  with the confirmation plus the instruction to text the five-character code.
+- **Outbound** — `create-sms-chat` returned 200 and billed one `sms_message`,
+  with the same opening.
+
+Two symptoms worth recognizing if this ever regresses. A number with no SMS
+agent bound is silent inbound and 400s outbound, which looks like a carrier
+problem and is not one. And a failed confirmation is visible on the opt-in page
+without any log access: the success wording is *"Check your phone for a
+confirmation text, then text …"*, so a page that says only *"You are opted in.
+Text … to begin."* means the send failed.
+
+## The agent flow
+
+The patched flow is live. The start node is the confirmation, the verification
+path is reachable, HELP has a fixed answer and auto-close is 72 hours
+(`end_chat_after_silence_ms: 259200000`). Chat agent version **2** is published
+and is what the number is pinned to; version 3 is a draft that differs from it
+in two interview nodes only (`q-dpscr011`,
+`conversation-1782878930497-0`) — the whole code-verification path is identical
+in both, so nothing about SMS depends on publishing v3.
 
 ## What the agent flow used to do
 
@@ -204,23 +235,41 @@ applied and imported; all that is left is confirming the version is published.
 
 ## Traps — things that look fine and are not
 
-- **The confirmation text cannot be tested before approval.** Carriers filter
-  outbound A2P messages until the campaign is approved, and approval is what
-  we are applying for. A successful API call before then means Retell accepted
-  it, not that anyone received it.
+- **A "sent" result still only means Retell accepted it.** Approval removed
+  the carrier filter, but the API call and the delivery are separate facts,
+  and only a handset proves the second one.
 - **Retell's `create-sms-chat` opens a chat; the first message is written by
   the agent bound to the number, not by the text our code sends.** If that
-  agent's begin message is not the registered confirmation wording,
-  participants receive something different from what the carrier approved.
+  agent's opening is not the registered confirmation wording, participants
+  receive something different from what the carrier approved.
 - **Because it opens a chat, the participant's later message lands in a
   conversation that is already live.** The agent must not start interviewing
   before `/api/verify-code` succeeds, or someone who opted in from the public
   page gets interviewed with no code and no linkage.
+- **Two chats can be open on one handset at once**, one inbound and one
+  outbound, if someone texts the number before opting in. Which one their next
+  message reaches is undefined, and the code has to arrive in the chat the
+  verification node is waiting in. Close stale chats with
+  `PATCH /end-chat/{chat_id}` before re-testing.
+- **SMS agents are bound to the number on different fields from voice agents.**
+  A number can look fully configured — `inbound_agents` and `outbound_agents`
+  both populated — and still be silent on SMS, because those are the voice
+  fields. SMS needs `inbound_sms_agents` and `outbound_sms_agents`, and needs a
+  chat agent rather than a voice one.
 - **The agent's silence timers may start at opt-in rather than at the
   participant's first message.** Someone who opts in on a laptop and texts
   the next morning could find the chat closed.
-- **matter.childmind.org cannot be checked with curl** — Cloudflare returns
-  403 to non-browsers. Always verify those pages in a browser.
+- **matter.childmind.org used to return 403 to curl.** The Cloudflare
+  exemption now covers all four filed paths, but a browser check cannot detect
+  a regression — only `curl` can.
+- **The three Prolific completion codes are set in the application but
+  unverified in Prolific.** The application emits `C1NLN7GA` on a clean
+  completion, `C1I7LHFW` when two or more attention checks fail, and
+  `CUS43GAW` when someone declines on the consent page; a participant who
+  times out mid-interview deliberately gets **no code at all** and is sent to
+  return the study. What is not verified is the action Prolific has attached to
+  each code. Never attach a rejection action to any of the three —
+  `C1I7LHFW` is hold-for-review, not reject.
 
 ## Decisions already made, with reasons
 
