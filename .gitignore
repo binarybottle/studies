@@ -6,3 +6,4 @@ backup.log
 study.db
 study.db-wal
 study.db-shm
+.DS_Store
