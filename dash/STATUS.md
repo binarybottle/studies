@@ -259,6 +259,16 @@ applied and imported; all that is left is confirming the version is published.
 - **The agent's silence timers may start at opt-in rather than at the
   participant's first message.** Someone who opts in on a laptop and texts
   the next morning could find the chat closed.
+- **`create-chat` does not make the agent speak.** It opens a chat and
+  returns an empty transcript; the flow's first node runs on the first
+  `create-chat-completion`, which requires user content. This caused the
+  browser opening to appear twice — the page painted `WEB_OPENING` itself
+  because Retell had said nothing, and Retell then said the same thing when
+  the participant answered, spending their first reply on a question that had
+  not been asked yet. It is not a flow bug and cannot be found in the flow;
+  SMS is immune because Retell writes the first message there itself.
+  `chat_start` now sends `WEB_BOOTSTRAP` to draw the opening out, and
+  `conversation_so_far` hides that turn.
 - **matter.childmind.org used to return 403 to curl.** The Cloudflare
   exemption now covers all four filed paths, but a browser check cannot detect
   a regression — only `curl` can.

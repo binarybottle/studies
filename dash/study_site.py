@@ -191,6 +191,18 @@ WEB_OPENING = (
     "persona you were given, as part of the DASH Mental Health Screener. "
     "Shall we begin? Please reply yes or no."
 )
+
+# Retell opens a chat but does not make the agent speak. `create-chat` returns
+# an empty transcript, and the flow's first node only runs on the first
+# `create-chat-completion`, which requires user content. So the browser sends
+# this one word to draw the opening out, and the transcript hides it again.
+#
+# Without it the page has to paint the opening itself, and the agent then says
+# the very same thing when the participant answers -- the opening asked twice,
+# with their first reply spent on a question that had not been asked yet. The
+# text channel never needs this because Retell writes the first SMS itself.
+WEB_BOOTSTRAP = "Hello"
+
 SMS_SEND_URL = os.environ.get(
     "SMS_SEND_URL", "https://api.retellai.com/create-sms-chat"
 )
@@ -1605,6 +1617,9 @@ def conversation_so_far(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
         ...                      {"role": "node_transition"},
         ...                      {"role": "user", "content": "hello"}])
         [{'who': 'agent', 'text': 'Hi'}, {'who': 'you', 'text': 'hello'}]
+        >>> conversation_so_far([{"role": "user", "content": WEB_BOOTSTRAP},
+        ...                      {"role": "agent", "content": "Shall we?"}])
+        [{'who': 'agent', 'text': 'Shall we?'}]
     """
     shown = []
     for message in messages:
@@ -1615,6 +1630,11 @@ def conversation_so_far(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
         if role in {"agent", "assistant"}:
             shown.append({"who": "agent", "text": text})
         elif role == "user":
+            # The browser channel opens with WEB_BOOTSTRAP, which this
+            # application sent to make the agent speak first. Nobody said it,
+            # so it does not belong on screen.
+            if not shown and text == WEB_BOOTSTRAP:
+                continue
             shown.append({"who": "you", "text": text})
     return shown
 
@@ -1767,13 +1787,23 @@ async def chat_start(payload: ChatStart) -> dict[str, Any]:
 
     store.set_channel(participant.pid, "web")
     store.bind_chat(participant.pid, chat_id)
+
+    # Draw the opening out of the agent. A chat that has just been created has
+    # said nothing at all, so without this the page would have to speak for it
+    # and the agent would repeat the opening at the participant's first reply.
     messages = agent_replies(created.get("message_with_tool_calls") or [])
+    if not messages:
+        opened = await retell_post(
+            RETELL_CHAT_COMPLETION_URL,
+            {"chat_id": chat_id, "content": WEB_BOOTSTRAP},
+        )
+        messages = agent_replies(opened.get("messages") or [])
     return {
         "chat_id": chat_id,
         "history": [],
         "messages": messages,
-        # A new chat that says nothing has not asked anything either. Show
-        # the opening rather than an empty page with a text box.
+        # Only reached if the agent stayed silent even then: a copy of the
+        # opening beats an empty page with a text box.
         "repeat": None if messages else WEB_OPENING,
         "resumed": False,
         "ended": False,
