@@ -235,6 +235,14 @@ MAX_CODE_ATTEMPTS = 5
 PHONE_HASH_SALT = os.environ.get("PHONE_HASH_SALT", "change-me")
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
 
+# Retell's function nodes carry this as a custom header, set on both custom
+# tools in the dashboard. It is what makes the ``pid`` fallback in
+# /api/complete safe to have: the conversation id is a secret only Retell
+# knows, but a Prolific ID is not, so without a shared secret that fallback
+# would be a way for anyone to mint a completion link. Left unset, the
+# endpoints behave exactly as they did before and the fallback is refused.
+RETELL_TOOL_TOKEN = os.environ.get("RETELL_TOOL_TOKEN", "")
+
 app = FastAPI(title="Study site")
 
 
@@ -994,6 +1002,25 @@ async def chat_page(pid: str) -> HTMLResponse:
           log.scrollTop = log.scrollHeight;
         }}
 
+        // Reached when Retell has closed the conversation, which it does
+        // the moment the flow hits its End node. The composer stays disabled:
+        // every further message would be refused, and telling someone to try
+        // again on a finished interview is how they end up unpaid.
+        function closed() {{
+          enable(false);
+          entry.placeholder = "This interview has finished";
+          if (document.getElementById("closed-note")) return;
+          const note = document.createElement("p");
+          note.id = "closed-note";
+          note.className = "muted";
+          note.textContent =
+            "This conversation has closed. If a button to return to Prolific " +
+            "does not appear below within a minute, email the address below " +
+            "with your Prolific ID and we will sort out your payment.";
+          log.appendChild(note);
+          log.scrollTop = log.scrollHeight;
+        }}
+
         function enable(on) {{
           entry.disabled = !on;
           send.disabled = !on;
@@ -1023,9 +1050,7 @@ async def chat_page(pid: str) -> HTMLResponse:
             started.messages.forEach(m => show("agent", m));
 
             if (started.ended) {{
-              show("agent",
-                "This conversation has closed. Email the address below with " +
-                "your Prolific ID and we will sort out your payment.");
+              closed();
               return;
             }}
             // Whatever the participant is actually being asked, put it back
@@ -1056,6 +1081,10 @@ async def chat_page(pid: str) -> HTMLResponse:
             const answered = await call("/api/chat/send", {{ pid: pid, content: text }});
             waiting.remove();
             answered.messages.forEach(m => show("agent", m));
+            if (answered.ended) {{
+              closed();
+              return;
+            }}
           }} catch (error) {{
             waiting.remove();
             show("agent", error.message + " Your answer was not lost; try again.");
@@ -1111,11 +1140,16 @@ def prefers_sms(user_agent: str) -> bool:
     return bool(re.search(r"Android|iPhone|iPad|iPod|Mobile", user_agent))
 
 
-def sms_card(participant: Participant) -> str:
+def sms_card(participant: Participant, on_phone: bool) -> str:
     """Build the text-message option.
 
     Args:
         participant: The consented participant, whose code is shown.
+        on_phone: Whether this device can open a messaging app from a link.
+            A desktop cannot: an ``sms:`` href does nothing in a desktop
+            browser, and Google Messages on the web cannot be launched by
+            one either, so the button is replaced by the instruction that
+            actually works there.
 
     Returns:
         Markup for the card.
@@ -1123,6 +1157,16 @@ def sms_card(participant: Participant) -> str:
     sms_number = normalize_phone(STUDY_SMS_NUMBER) or STUDY_SMS_NUMBER
     sms_link = f"sms:{sms_number}?body={participant.code}"
     optin_link = f"{OPTIN_PAGE_URL}?pid={quote(participant.pid)}"
+    opener = (
+        f"""<p style="text-align:center">
+            <a class="btn" id="sms-link"
+               href="{html.escape(sms_link)}">Open my messaging app</a>
+          </p>"""
+        if on_phone
+        else """<p class="muted">Send it from your phone, in your usual
+          messaging app. You can close this page once you have; the
+          conversation continues by text.</p>"""
+    )
     return f"""
         <div class="card">
           <h2>By text message</h2>
@@ -1137,10 +1181,7 @@ def sms_card(participant: Participant) -> str:
           <p><strong>Then</strong> text this code to
           <strong>{html.escape(STUDY_SMS_NUMBER)}</strong>:</p>
           <div class="code">{html.escape(participant.code or '')}</div>
-          <p style="text-align:center">
-            <a class="btn" id="sms-link"
-               href="{html.escape(sms_link)}">Open my messaging app</a>
-          </p>
+          {opener}
         </div>"""
 
 
@@ -1191,11 +1232,17 @@ async def begin(pid: str, request: Request) -> HTMLResponse:
     if not SMS_ENABLED:
         return browser_only_page(participant)
 
+    # Codes expire; the page that displays them did not. Someone who consents,
+    # is interrupted, and comes back the next day was shown a code the agent
+    # refuses, with no way to obtain another. Ask for a usable one on the way
+    # in: this returns the stored code untouched while it is still good.
+    participant.code = store.mint_code(pid, ttl_seconds=CODE_TTL_SECONDS)
+
     first_is_sms = prefers_sms(request.headers.get("user-agent", ""))
     cards = (
-        [sms_card(participant), web_card(participant)]
+        [sms_card(participant, first_is_sms), web_card(participant)]
         if first_is_sms
-        else [web_card(participant), sms_card(participant)]
+        else [web_card(participant), sms_card(participant, first_is_sms)]
     )
     return page(
         "Choose how to take part",
@@ -1305,8 +1352,8 @@ async def retell_payload(request: Request) -> RetellFunctionCall:
         return RetellFunctionCall()
 
     # Form encoding flattens everything to strings, so a nested object
-    # arrives as its JSON text. Restore the two the model declares.
-    for key in ("args", "call"):
+    # arrives as its JSON text. Restore the three that carry context.
+    for key in ("args", "call", "chat"):
         if isinstance(data.get(key), str):
             try:
                 data[key] = json.loads(data[key])
@@ -1315,7 +1362,12 @@ async def retell_payload(request: Request) -> RetellFunctionCall:
         if key in data and not isinstance(data[key], dict):
             data.pop(key)
 
-    return RetellFunctionCall(**data)
+    # The header is authority, never the body: a caller who could set this
+    # by posting it would be authenticating themselves.
+    data.pop("tool_token", None)
+    return RetellFunctionCall(
+        tool_token=request.headers.get("x-study-token", ""), **data
+    )
 
 
 def normalize_phone(raw: str) -> str | None:
@@ -1734,6 +1786,26 @@ async def retell_post(url: str, body: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=502, detail="The interviewer is not responding.")
 
 
+async def chat_has_ended(chat_id: str) -> bool:
+    """Ask Retell whether a conversation is closed.
+
+    Called only after a send has already failed, so the extra round trip
+    costs nothing on the normal path. Retell closes a chat the moment the
+    flow reaches its End node, and every later message is refused; without
+    this the participant is told to try again, indefinitely, on an
+    interview that is already over.
+
+    Args:
+        chat_id: Retell chat ID.
+
+    Returns:
+        True only on a definite answer that the chat has ended. A history
+        that cannot be read is not evidence of anything.
+    """
+    chat = await retell_get(f"{RETELL_GET_CHAT_URL}/{chat_id}")
+    return chat.get("chat_status") == "ended"
+
+
 @app.post("/api/chat/start")
 async def chat_start(payload: ChatStart) -> dict[str, Any]:
     """Open a browser conversation and bind it to the participant.
@@ -1818,7 +1890,10 @@ async def chat_send(payload: ChatMessage) -> dict[str, Any]:
         payload: The participant and what they typed.
 
     Returns:
-        The agent's messages, in order.
+        The agent's messages in order, and whether the conversation has
+        closed. A closed chat refuses every message, so reporting it as a
+        transport error invites the participant to retry an interview that
+        has already finished.
     """
     participant = require(payload.pid)
     if not participant.chat_id:
@@ -1827,11 +1902,24 @@ async def chat_send(payload: ChatMessage) -> dict[str, Any]:
     if not content:
         return {"messages": []}
 
-    answered = await retell_post(
-        RETELL_CHAT_COMPLETION_URL,
-        {"chat_id": participant.chat_id, "content": content},
-    )
-    return {"messages": agent_replies(answered.get("messages") or [])}
+    try:
+        answered = await retell_post(
+            RETELL_CHAT_COMPLETION_URL,
+            {"chat_id": participant.chat_id, "content": content},
+        )
+    except HTTPException:
+        if await chat_has_ended(participant.chat_id):
+            store.log_event(
+                "chat_send_after_end",
+                pid=participant.pid,
+                chat_id=participant.chat_id,
+            )
+            return {"messages": [], "ended": True}
+        raise
+    return {
+        "messages": agent_replies(answered.get("messages") or []),
+        "ended": False,
+    }
 
 
 class RetellFunctionCall(BaseModel):
@@ -1845,12 +1933,15 @@ class RetellFunctionCall(BaseModel):
     Attributes:
         args: Extracted arguments keyed by parameter name, when nested.
         call: Conversation context, including the chat identifier.
+        tool_token: The shared secret from the request header, filled in by
+            ``retell_payload`` rather than read from the body.
     """
 
     model_config = {"extra": "allow"}
 
     args: dict[str, Any] = {}
     call: dict[str, Any] = {}
+    tool_token: str = ""
 
     def argument(self, name: str) -> str:
         """Read one argument regardless of payload shape.
@@ -1875,16 +1966,81 @@ class RetellFunctionCall(BaseModel):
     def chat_identifier(self) -> str | None:
         """Return the conversation id from whichever field carries it.
 
+        A voice agent nests context under ``call``; a chat agent may nest it
+        under ``chat``, which is the shape ``/api/retell-webhook`` already
+        receives. Looking in only one of them is how a conversation ends up
+        unrecognised while the agent reports everything as fine.
+
         Returns:
-            The chat or call id, or ``None`` when neither is present.
+            The chat or call id, or ``None`` when none is present.
         """
         extra = self.model_extra or {}
+        chat = extra.get("chat")
+        chat = chat if isinstance(chat, dict) else {}
         return (
             self.call.get("chat_id")
             or self.call.get("call_id")
+            or chat.get("chat_id")
+            or chat.get("call_id")
             or extra.get("chat_id")
             or extra.get("call_id")
         )
+
+
+def resolve_participant(
+    payload: RetellFunctionCall, endpoint: str
+) -> Participant | None:
+    """Identify whose conversation a function call belongs to.
+
+    The conversation id is the right key and is tried first. When it is
+    absent or unrecognised, an authenticated call may name the participant
+    instead: the flow knows ``{{prolific_pid}}`` in both channels, so the
+    completion does not have to depend on Retell's payload shape. That
+    fallback is refused without the shared secret, because a Prolific ID is
+    not a secret and completion links are worth money.
+
+    Every failure is logged. An unresolved call is the one failure in this
+    application that is invisible from the participant's side and silent in
+    the transcript: the agent proceeds to its End node either way, and the
+    only symptom is an unresolved ``{{completion_url}}``.
+
+    Args:
+        payload: The Retell function-call body.
+        endpoint: Short label for the audit trail, e.g. ``"complete"``.
+
+    Returns:
+        The participant, or ``None`` when the call cannot be attributed.
+    """
+    chat_id = payload.chat_identifier()
+    participant = store.participant_by_chat(chat_id or "")
+    if participant is not None:
+        return participant
+
+    pid = payload.argument("pid")
+    authenticated = bool(RETELL_TOOL_TOKEN) and secrets.compare_digest(
+        payload.tool_token, RETELL_TOOL_TOKEN
+    )
+    if pid and authenticated:
+        participant = store.get_participant(pid)
+        if participant is not None:
+            store.log_event(
+                "tool_pid_fallback", pid=pid, chat_id=chat_id, detail=endpoint
+            )
+            # Repair the linkage while we know both halves of it, so the
+            # transcript can still be joined to the submission afterwards.
+            if chat_id and participant.chat_id != chat_id:
+                store.link_chat(pid, chat_id)
+                participant.chat_id = chat_id
+            return participant
+
+    store.log_event(
+        "tool_unresolved",
+        pid=pid or None,
+        chat_id=chat_id,
+        detail=f"{endpoint}:{'pid' if pid else 'no-pid'}:"
+        f"{'auth' if authenticated else 'unauth'}",
+    )
+    return None
 
 
 @app.post("/api/verify-code")
@@ -1906,6 +2062,13 @@ async def verify_code(payload: RetellFunctionCall = Depends(retell_payload)) -> 
     raw = payload.argument("participant_code")
     chat_id = payload.chat_identifier()
     code = normalize_code(raw)
+
+    if not chat_id:
+        # The code still redeems, because refusing here strands a participant
+        # at the gate for a fault that is ours. But a redemption with no
+        # conversation to bind leaves the interview unlinked and its
+        # completion unresolvable, so it must not pass unrecorded.
+        store.log_event("redeem_without_chat_id", detail="verify-code")
 
     pid, reason = store.redeem_code(code, chat_id, max_attempts=MAX_CODE_ATTEMPTS)
     if pid is None:
@@ -1932,7 +2095,11 @@ async def complete(payload: RetellFunctionCall = Depends(retell_payload)) -> dic
 
     Configure the node with three optional string parameters ``ac1``,
     ``ac2``, and ``ac3``, passing the dynamic variables of the same name so
-    the attention-check outcomes are recorded in one call.
+    the attention-check outcomes are recorded in one call. Add a fourth,
+    ``pid``, carrying ``{{prolific_pid}}``: it is ignored while the
+    conversation is recognised and is the only thing standing between a
+    finished interview and an unpaid participant when it is not. It is
+    honoured only on a call carrying ``RETELL_TOOL_TOKEN``.
 
     Args:
         payload: The Retell function-call body.
@@ -1941,8 +2108,7 @@ async def complete(payload: RetellFunctionCall = Depends(retell_payload)) -> dic
         The completion URL, which the final node should send to the
         participant verbatim, alongside the resolved outcome.
     """
-    chat_id = payload.chat_identifier()
-    participant = store.participant_by_chat(chat_id or "")
+    participant = resolve_participant(payload, "complete")
     if participant is None:
         return {"completed": False, "message": "Unrecognised conversation."}
 
@@ -1983,8 +2149,7 @@ async def attention_check(payload: RetellFunctionCall = Depends(retell_payload))
     Returns:
         An acknowledgement and the running failure count, for logging only.
     """
-    chat_id = payload.chat_identifier()
-    participant = store.participant_by_chat(chat_id or "")
+    participant = resolve_participant(payload, "attention-check")
     if participant is None:
         return {"recorded": False, "message": "Unrecognised conversation."}
 

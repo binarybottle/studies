@@ -399,21 +399,46 @@ def set_stage(pid: str, stage: Stage) -> None:
 
 
 def mint_code(pid: str, ttl_seconds: float) -> str:
-    """Issue a one-time code and bind it to a participant.
+    """Return a code the participant can still redeem, issuing one if needed.
 
     The alphabet excludes characters that are ambiguous when read off one
     screen and typed into another (0/O, 1/I/L, 5/S, 2/Z, 8/B).
+
+    Idempotent while the stored code is still usable, and only then. A code
+    outlives its ``ttl_seconds`` but the row that displays it does not
+    expire with it, so returning the stored code unconditionally meant a
+    participant who came back the next day was shown a code the agent would
+    refuse -- and had no way to get another. Re-issuing on the way past is
+    what makes the code on the page and the code the agent accepts the same
+    string.
+
+    A participant already in a conversation keeps their code untouched
+    whatever its state: they have redeemed it, they are mid-interview, and a
+    fresh code would only invite them to start a second one.
 
     Args:
         pid: Prolific participant ID.
         ttl_seconds: Lifetime of the code.
 
     Returns:
-        The issued code.
+        A redeemable code.
     """
     existing = get_participant(pid)
     if existing is not None and existing.code:
-        return existing.code
+        if existing.chat_id:
+            return existing.code
+        row = connection().execute(
+            "SELECT * FROM codes WHERE code = ?", (existing.code,)
+        ).fetchone()
+        if row is None:
+            reason = "missing"
+        elif row["redeemed_by_chat"]:
+            reason = "spent"
+        elif time.time() > row["expires_at"]:
+            reason = "expired"
+        else:
+            return existing.code
+        log_event("code_reissued", pid=pid, detail=reason)
 
     while True:
         code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(CODE_LENGTH))
@@ -572,6 +597,26 @@ def bind_chat(pid: str, chat_id: str) -> None:
         )
         connection().commit()
     log_event("chat_bound", pid=pid, chat_id=chat_id)
+
+
+def link_chat(pid: str, chat_id: str) -> None:
+    """Record a conversation id without touching the participant's stage.
+
+    ``bind_chat`` moves a participant to ``texting``, which is right at the
+    moment a browser conversation opens and wrong afterwards: a repair made
+    from a function call late in the interview would send someone who is
+    already ``complete`` backwards. This writes the linkage column only.
+
+    Args:
+        pid: Prolific participant ID.
+        chat_id: Retell chat ID.
+    """
+    with _write_lock:
+        connection().execute(
+            "UPDATE participants SET chat_id = ? WHERE pid = ?", (chat_id, pid)
+        )
+        connection().commit()
+    log_event("chat_linked", pid=pid, chat_id=chat_id)
 
 
 def set_phone_hash(pid: str, number: str) -> None:

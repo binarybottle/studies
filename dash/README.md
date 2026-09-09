@@ -366,6 +366,7 @@ optin/
     build_optin_page.py       Generates the opt-in page from the app's constants
     add_web_branch.py         Adds the browser branch to the Retell flow export
     patch_retell_flow.py      Applies the flow fixes to a Retell export
+    fix_flow.py               Applies the September 2026 pilot corrections
     hostname-switch.md        Runbook for moving to the childmind.org host
 ```
 
@@ -406,6 +407,23 @@ not attempted.
 **A confirmation text is accepted but never arrives.** Expected until the
 A2P campaign is approved: carriers filter outbound A2P messages, so a
 successful API call means Retell accepted it, not that anyone received it.
+
+**The last message says `{{completion_url}}` instead of a link, and nobody
+is marked `complete`.** The `complete_study` function call was not
+attributable to a participant, so `/api/complete` returned no URL and the
+flow walked into its End node anyway. Look for `tool_unresolved` in
+`events`: the detail says whether a `pid` was sent and whether the call was
+authenticated. `no-pid` means the tool node is missing its `pid` parameter
+(`{{prolific_pid}}`); `unauth` means `RETELL_TOOL_TOKEN` and the tool's
+`X-Study-Token` header disagree. A `redeem_without_chat_id` row means the
+same thing one step earlier, on the SMS path: the code was accepted but
+bound to nothing.
+
+**The browser interview answers "The interviewer is not responding" over and
+over at the end.** It is not a transport failure. Retell closes the chat at
+the End node and refuses everything after it; the page now detects that and
+stops inviting a retry. An `HTTPStatusError` under `chat_api_failed` is this
+case, a `ReadTimeout` is a genuinely slow turn.
 
 **A participant's interview reads as if it never had a code.** The Retell
 flow's verification nodes were unreachable in an earlier export. See
