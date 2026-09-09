@@ -7,3 +7,5 @@ study.db
 study.db-wal
 study.db-shm
 .DS_Store
+# fix_flow.py --token writes the shared secret into the flow.
+*.fixed.json
