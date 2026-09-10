@@ -389,7 +389,7 @@ here. The site's own front page is rendered by `study_site.py`.
 
 Creating an agent, editing a flow, publishing a version, binding a phone
 number, and the identifiers that connect them to this application are covered
-in [`retell.md`](retell.md), with a read-only pre-flight check to run before
+in [`../retell.md`](../retell.md), with a read-only pre-flight check to run before
 each test round. Read it before changing anything on the Retell side: the
 mistakes available there are silent ones, and they are paid for by
 participants who finish and cannot be paid.
@@ -439,7 +439,7 @@ case, a `ReadTimeout` is a genuinely slow turn.
 **A fix is published in Retell and the interview still behaves as before.**
 The version is a draft. `create-chat` serves the published version, so the
 canvas and the conversation disagree. See
-[`retell.md`](retell.md#publishing).
+[`../retell.md`](../retell.md#publishing).
 
 **A participant's interview reads as if it never had a code.** The Retell
 flow's verification nodes were unreachable in an earlier export. See

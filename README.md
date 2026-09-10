@@ -31,6 +31,7 @@ studies/
     compose.yml          Caddy + one service per study
     Caddyfile            TLS, routing, admin IP restriction
     backup.sh            Nightly SQLite backup, 30-day retention
+    retell.md            Retell agents and flows: setup, publishing, secrets
     dash/                One study. See dash/README.md.
         README.md        What the study is and how it is configured
         STATUS.md        Point-in-time handoff briefing
@@ -44,7 +45,9 @@ studies/
 
 Everything a study needs lives in that study's directory, including material
 that is never deployed with it, so that copying the directory copies the
-whole study.
+whole study. `retell.md` is the exception, and deliberately: it describes the
+Retell platform rather than any one study, so a second study running its
+interview there inherits it rather than rediscovering it.
 
 This repository is the source of truth for everything except `.env`, which
 exists only on the droplet and is never committed. The droplet holds its own

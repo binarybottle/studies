@@ -1,13 +1,19 @@
-# The Retell agent and flow
+# Retell agents and flows
 
-Everything the interview says lives in Retell; everything it records lives
-here. That split is the whole reason this file exists, because the two halves
-are joined by identifiers that look alike, live in different places, and give
-no error when they disagree — the failure is silent, and the participant pays
-for it.
+Applies to any study in this repository that runs its interview on Retell.
+Everything the interview *says* lives in Retell; everything it *records* lives
+in the study's own container. That split is the whole reason this file exists,
+because the two halves are joined by identifiers that look alike, live in
+different places, and give no error when they disagree — the failure is
+silent, and the participant pays for it.
 
 Read this before creating an agent, changing a flow, or moving a study to a
 new number.
+
+Concrete values throughout — `dash`, `dash.study.childmind.org`,
+`PROLIFIC_CC_*` — come from the DASH study, which is the only one using Retell
+so far. Substitute the service name and host of whichever study you are
+working on; the structure is the same.
 
 ---
 
@@ -15,7 +21,7 @@ new number.
 
 | Identifier | Looks like | Where it must match |
 | --- | --- | --- |
-| Chat agent | `agent_` + 26 hex | `RETELL_AGENT_ID` in `.env`, **and** the number's SMS bindings |
+| Chat agent | `agent_` + 26 hex | `RETELL_AGENT_ID` in the study's `.env`, **and** the number's SMS bindings |
 | Conversation flow | `conversation_flow_` + 12 hex | Owned by the agent; you never configure it directly |
 | Agent version | a small integer | Whatever the number's bindings pin, and it must be **published** |
 | Tool | `tool_` + timestamp | Internal to the flow; only matters when reading an export |
@@ -64,7 +70,7 @@ what `optin/fix_flow.py` exists for — treat it as a migration:
 
 1. Import.
 2. Find the new agent id: dashboard URL, or `/list-chat-agents`.
-3. Set `RETELL_AGENT_ID` in `.env` and recreate the container.
+3. Set `RETELL_AGENT_ID` in the study's `.env` and recreate the container.
 4. Re-point the number's `inbound_sms_agents` and `outbound_sms_agents`.
 5. Publish (see below).
 6. Update the identifiers in `STATUS.md`, so the next person is not debugging a
@@ -205,7 +211,7 @@ no-consent. Never auto-reject.
 
 ### The three sensitive things
 
-**`dash/.env`** — every secret. `chmod 600`, never committed.
+**The study's `.env`** (`dash/.env`) — every secret. `chmod 600`, never committed.
 
 **`study.db`** (the `dash_data` volume) — the more serious one. It holds the
 linkage table: Prolific IDs, session IDs, chat IDs, salted phone hashes. This
@@ -250,7 +256,8 @@ Delete them once imported.
 ## Pre-flight check
 
 Run before every test round. Everything is read-only, and it runs from the
-droplet because that is where the API key lives.
+droplet because that is where the API key lives. `dash` is the compose service
+name — use the study's own.
 
 ```bash
 ssh arno@167.71.248.46 'cd ~/studies && docker compose exec -T dash python -c "
@@ -342,6 +349,6 @@ with nothing in the transcript to show for it. This is the list to check.
 
 ---
 
-See also [`README.md`](README.md) for the application, [`STATUS.md`](STATUS.md)
+See also [`dash/README.md`](dash/README.md) for that study, [`dash/STATUS.md`](dash/STATUS.md)
 for the current identifiers and outstanding decisions, and
-[`optin/fix_flow.py`](optin/fix_flow.py) for the flow transform.
+[`dash/optin/fix_flow.py`](dash/optin/fix_flow.py) for the flow transform.
