@@ -36,14 +36,14 @@ from pydantic import BaseModel, Field
 
 from . import config, prompts
 from .content import ContentError, ContentLibrary
-from .llm import LLMError, get_client
+from .llm import PROMPT_VERSION, LLMError, get_client
 from .session import STEP_FIELD, FlowError, Session, ValidationError, now_iso
 from .store import Participant, Stage, get_store
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("msm")
 
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.2.0"
 STATIC_DIR = Path(__file__).parent / "static"
 
 library: ContentLibrary | None = None
@@ -450,6 +450,8 @@ async def get_config() -> dict[str, Any]:
     return {
         "app_version": APP_VERSION,
         "min_response_words": config.MIN_RESPONSE_WORDS,
+        "min_final_response_words": config.MIN_FINAL_RESPONSE_WORDS,
+        "prompt_version": PROMPT_VERSION,
         "score_min": config.SCORE_MIN,
         "score_max": config.SCORE_MAX,
         "thinking_slow_after_ms": config.THINKING_SLOW_AFTER_MS,
@@ -492,6 +494,8 @@ async def open_session(req: SessionRequest) -> dict[str, Any]:
             store.record_event(pid, None, "session_started", {
                 "assignment_index": participant.assignment_index,
                 "block_count": len(session.plan.blocks),
+                "app_version": APP_VERSION,
+                "prompt_version": PROMPT_VERSION,
             })
             view = session.open_block()
             _open_current_block(session)

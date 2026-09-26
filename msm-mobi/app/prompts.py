@@ -15,14 +15,15 @@ CONFIDENCE_1 = (
 # Reads back the participant's own Answer Score 1.
 TEXT_1 = "You rated that {answer_score_1} out of 100. What made you give that score?"
 
-# User Text Response 2 and 3 have no prompt message of their own: the LLM
-# reply that precedes them asks for the response itself. These are the input
-# placeholders, and they are the fallback affordance if a reply ever fails to
-# close on a question.
+# User Text Response 2 and 3 have no prompt message of their own: the input
+# box follows the LLM reply directly. The placeholder is what tells the
+# participant the box is theirs, since the reply may or may not end on a
+# question. The third says a short reply is fine: nothing follows it, and a
+# word minimum there produced padded repetition in the pilot.
 TEXT_PLACEHOLDER = {
     "text_1": "Type your response...",
     "text_2": "Type your reply...",
-    "text_3": "Type your reply...",
+    "text_3": "Your reply. A short one is fine if you have nothing to add.",
 }
 
 # Answer Score 2 restates the Question as a new message.

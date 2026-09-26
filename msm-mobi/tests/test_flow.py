@@ -232,7 +232,9 @@ def test_stance_never_reaches_the_client(client):
         assert not re.search(rf"\b{term}\b", blob), f"{term!r} leaked to the client"
 
 
-def test_llm_reply_elicits_the_next_response_itself(client):
+def test_llm_reply_is_followed_directly_by_the_input(client):
+    """No standardized prompt follows a reply; the box's placeholder is the
+    only other affordance, so it must always be there."""
     token = open_session(client)["session"]
     client.post(f"/api/session/{token}/submit", json={"step": "answer_1", "value": 40})
     client.post(f"/api/session/{token}/submit", json={"step": "confidence_1", "value": 60})
@@ -241,9 +243,30 @@ def test_llm_reply_elicits_the_next_response_itself(client):
         assert view["awaiting_llm"]
         view = client.post(f"/api/session/{token}/llm").json()
         assert [m["kind"] for m in view["messages"]] == ["llm"]
-        assert view["messages"][0]["text"].rstrip().endswith("?")
         assert len(view["messages"][0]["text"].split()) <= config.MAX_LLM_WORDS
         assert view["input"]["step"] == next_step and view["input"]["placeholder"]
+
+
+def test_final_reply_may_be_brief_but_not_empty(client):
+    token = open_session(client)["session"]
+    for step, value in (("answer_1", 40), ("confidence_1", 60), ("text_1", WORDS)):
+        client.post(f"/api/session/{token}/submit", json={"step": step, "value": value})
+    client.post(f"/api/session/{token}/llm")
+    view = client.post(f"/api/session/{token}/submit", json={"step": "text_2", "value": "too short"}).json()
+    assert client.post(f"/api/session/{token}/submit", json={"step": "text_2", "value": WORDS}).status_code == 200
+    view = client.post(f"/api/session/{token}/llm").json()
+    assert view["input"]["step"] == "text_3" and view["input"]["min_words"] == config.MIN_FINAL_RESPONSE_WORDS
+    assert client.post(f"/api/session/{token}/submit", json={"step": "text_3", "value": "   "}).status_code == 422
+    r = client.post(f"/api/session/{token}/submit", json={"step": "text_3", "value": "Nothing to add."})
+    assert r.status_code == 200 and r.json()["input"]["step"] == "answer_2"
+
+
+def test_prompt_version_is_recorded(client):
+    from app.llm import PROMPT_VERSION
+    view = open_session(client)
+    row = dict(get_store().block_rows("P1")[0])
+    assert row["prompt_version"] == PROMPT_VERSION
+    assert client.get("/api/config").json()["prompt_version"] == PROMPT_VERSION
 
 
 # --- events ---

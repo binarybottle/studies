@@ -97,6 +97,7 @@ BLOCK_META_COLUMNS: tuple[str, ...] = (
     "scenario_label", "scenario_text", "question_text",
     "scale_low_label", "scale_high_label",
     "stance_label", "stance_name",
+    "prompt_version",
 )
 
 _SCHEMA = f"""

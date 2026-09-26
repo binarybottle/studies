@@ -38,17 +38,19 @@ Each block, practice included:
 | 2 | Answer Score 1 (0–100) | `answer_score_1` |
 | 3 | Confidence Score 1 (0–100) | `confidence_score_1` |
 | 4 | "You rated that N out of 100. What made you give that score?" — ≥15 words | `user_text_1` |
-| 5 | LLM reply 1 (≤75 words, ends by asking for a reply) | `llm_text_1`, latency, model |
+| 5 | LLM reply 1 (≤75 words; a closing question is optional) | `llm_text_1`, latency, model |
 | 6 | Reply — ≥15 words | `user_text_2` |
-| 7 | LLM reply 2 | `llm_text_2` |
-| 8 | Reply — ≥15 words | `user_text_3` |
+| 7 | LLM reply 2 (must engage what the participant added; no "moving on" cues) | `llm_text_2` |
+| 8 | Final reply — any length, not empty | `user_text_3` |
 | 9 | Answer Score 2 | `answer_score_2` |
 | 10 | Confidence Score 2 | `confidence_score_2` |
 | 11 | Activation score (0 calm – 100 activated) | `activation_score` |
 | 12 | Continue gate (not after block 12) | `advanced_at` |
 
 Every value is timestamped. The practice block always runs the Calibrated
-stance and is flagged `is_practice`. Navigation is forward-only; the
+stance and is flagged `is_practice`. The final reply has no minimum because
+nothing follows it: the first pilot's 15-word floor there produced the same
+padded sentence twelve times over, and participants said so. Navigation is forward-only; the
 transcript is cleared at each block boundary so no earlier block can be
 re-read. Paste is blocked in the text fields.
 
@@ -58,24 +60,6 @@ their connection, or comes back the next day is put back at the exact step
 they left, with the current block's transcript replayed — including a model
 turn that was in flight, which simply runs again. A redeploy mid-session has
 the same effect. There is no way to restart from the beginning.
-
-## Why a web app and not Retell
-
-The other study on this server (DASH) forwards every turn to a hosted Retell
-agent. That was considered here and rejected for one reason: **each block's
-model conversation must be independent**, and a Retell chat is a single
-transcript that the model sees in full. A prompt asking the model to ignore
-earlier blocks is a request, not a guarantee, and a stance manipulation that
-can be contaminated by the previous block's stance is a confound you cannot
-measure.
-
-Here every model call is built from scratch: the block's Scenario, Question,
-ratings and the turns exchanged so far in *this* block, and nothing else
-(`app/llm.py`, `build_messages`). Isolation is structural. The other benefits
-follow from owning the call: transcripts, prompts and the answering model land
-in this study's own database rather than a vendor dashboard; numeric answers
-come from a number field rather than a language-model extraction node; and
-the model is a configuration value.
 
 ## How it fits together
 
@@ -218,10 +202,9 @@ to talk to the model.
    docker compose exec msm-mobi python scripts/check_llm.py --turn 2 --repeat 5
    ```
 
-   Read the replies. Check `elicited=True` on every one (a reply that does
-   not end on a question leaves the participant facing an unlabelled box)
-   and that the latency spread sits clear of the 7 s threshold at which the
-   indicator changes text.
+   Read the replies, and check that the latency spread sits clear of the 7 s
+   threshold at which the thinking indicator changes text. The output names
+   the `prompt_version` in force; that value is written to every block row.
 
 2. **Walk the participant path** yourself:
    `https://msm-mobi.study.childmind.org/start?PROLIFIC_PID=walkthrough-1`. Refresh
@@ -279,8 +262,14 @@ scenario_label, category_label, scenario_text, question_text, scale_low_label, s
 needs at least three scenarios; the app refuses to start otherwise. The
 stance prompts are `content/stance_key.csv` (currently the prototype's
 Aligning / Calibrated / Counterbalancing definitions; the invariant framing
-that controls length and the closing question is `RESPONSE_FRAMING` in
-`app/llm.py`). The practice block is `content/practice_scenario.csv`.
+that controls length and form, and the per-turn guidance, are
+`RESPONSE_FRAMING` and `TURN_GUIDANCE` in `app/llm.py`). The practice block
+is `content/practice_scenario.csv`.
+
+**Bump `PROMPT_VERSION` in `app/llm.py` whenever any of those change.** It
+is recorded on every block row (`prompt_version` in `blocks.csv`) and in the
+`session_started` event, so sessions run under different wording can be told
+apart; its history is in the comment above it.
 
 Content is copied into the image, so a change needs
 `docker compose up -d --build msm-mobi`. Participants already in progress
@@ -321,6 +310,12 @@ timestamps. Their stage in `participants.csv` says where they are; `in_task`
 with no recent events means they left. Sending them the study link from
 Prolific again resumes them.
 
-**Replies do not end on a question.** `llm_text_N_elicited` = 0 in
-`blocks.csv`. Run `scripts/check_llm.py --repeat 10`; if it is frequent,
-the model or the framing needs attention before more data is collected.
+**Telling starts, completions and partial sessions apart.** In
+`participants.csv`, `stage` is `consented` for someone who agreed but never
+opened the task, `in_task` for a partial session, `complete` for a finished
+one, `withdrew` for a decline; `started_at` and `completed_at` give the
+times. `blocks.csv` shows how far a partial session got: the last row with
+any value filled in. Timing within a block comes from the per-step
+timestamps there (`scenario_shown_at` to `answer_score_1_at` is reading;
+`llm_text_N_requested_at` to `_received_at` is model latency; the gap from a
+reply's `_received_at` to the next `user_text_N_at` is reading plus typing).

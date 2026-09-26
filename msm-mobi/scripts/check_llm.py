@@ -5,8 +5,8 @@ Sends a block-shaped request through the same code the task uses -- same
 LiteLLM call, same system prompt construction, same Stance, same word cap --
 and prints the reply plus the latency the participant would have waited.
 
-Each reply also has to elicit the participant's next response in its own
-closing sentence, so the check reports whether it did.
+It also reports how many replies ended on a question, and which prompt
+version was used.
 
     python scripts/check_llm.py
     python scripts/check_llm.py --stance counterbalancing --turn 2 --repeat 5
@@ -28,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import config  # noqa: E402
 from app.content import ContentLibrary  # noqa: E402
-from app.llm import LLMClient, Turn, build_system_prompt  # noqa: E402
+from app.llm import PROMPT_VERSION, LLMClient, Turn, build_system_prompt  # noqa: E402
 
 
 async def run(args: argparse.Namespace) -> int:
@@ -37,7 +37,8 @@ async def run(args: argparse.Namespace) -> int:
     stance = lib.stances[args.stance]
     block = type(block)(**{**block.__dict__, "stance": stance})
 
-    print(f"provider={args.provider}  model={config.LLM_MODEL}  effort={config.LLM_EFFORT or '(unset)'}")
+    print(f"provider={args.provider}  model={config.LLM_MODEL}  effort={config.LLM_EFFORT or '(unset)'}  "
+          f"prompt_version={PROMPT_VERSION}")
     if config.LLM_API_BASE:
         print(f"api_base={config.LLM_API_BASE}")
     print(f"stance={stance.name}  turn={args.turn}\n")
@@ -69,8 +70,7 @@ async def run(args: argparse.Namespace) -> int:
 
     if len(latencies) > 1:
         print(f"latency: min={min(latencies)}ms  max={max(latencies)}ms  mean={sum(latencies) // len(latencies)}ms")
-    if elicited < args.repeat:
-        print(f"WARNING: {args.repeat - elicited} of {args.repeat} replies did not close on a question.")
+    print(f"{elicited} of {args.repeat} replies ended on a question (optional since prompt version 2).")
     print(f"\nThinking indicator switches to 'still thinking' after {config.THINKING_SLOW_AFTER_MS} ms.")
     return 0
 

@@ -19,7 +19,7 @@ from typing import Any, Literal
 
 from . import config, prompts
 from .content import BlockPlan, ParticipantPlan
-from .llm import LLMClient, LLMResult, Turn
+from .llm import PROMPT_VERSION, LLMClient, LLMResult, Turn
 
 StepName = Literal[
     "scenario", "answer_1", "confidence_1", "text_1", "llm_1",
@@ -66,6 +66,11 @@ def now_iso() -> str:
 def word_count(text: str) -> int:
     """Whitespace-delimited token count."""
     return len(text.split())
+
+
+def min_words_for(step: str) -> int:
+    """The final reply follows no chatbot response, so it may be brief."""
+    return config.MIN_FINAL_RESPONSE_WORDS if step == "text_3" else config.MIN_RESPONSE_WORDS
 
 
 @dataclass
@@ -319,7 +324,7 @@ class Session:
         if step in TEXT_STEPS:
             return InputSpec(
                 step=step, field=STEP_FIELD[step], type="text",
-                min_words=config.MIN_RESPONSE_WORDS,
+                min_words=min_words_for(step),
                 placeholder=prompts.TEXT_PLACEHOLDER.get(step),
             )
         if step == "gate":
@@ -367,11 +372,11 @@ class Session:
         if step in TEXT_STEPS:
             text = str(raw).strip()
             words = word_count(text)
-            if words < config.MIN_RESPONSE_WORDS:
-                raise ValidationError(
-                    f"Please write at least {config.MIN_RESPONSE_WORDS} words "
-                    f"({words} so far)."
-                )
+            minimum = min_words_for(step)
+            if words == 0:
+                raise ValidationError("Please type a reply.")
+            if words < minimum:
+                raise ValidationError(f"Please write at least {minimum} words ({words} so far).")
             return text
 
         if step == "gate":
@@ -491,4 +496,5 @@ class Session:
             "scale_high_label": block.scenario.scale_high_label,
             "stance_label": block.stance.label,
             "stance_name": block.stance.name,
+            "prompt_version": PROMPT_VERSION,
         }

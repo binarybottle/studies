@@ -48,7 +48,13 @@ PRACTICE_BLOCK_INDEX = 0
 """Practice block is block 0; real blocks are 1-12."""
 
 MIN_RESPONSE_WORDS = 15
-"""Minimum whitespace-delimited tokens for User Text Response 1-3."""
+"""Minimum whitespace-delimited tokens for User Text Response 1 and 2."""
+
+MIN_FINAL_RESPONSE_WORDS = 1
+"""User Text Response 3 only has to be non-empty. The pilot showed that a
+15-word minimum on the last reply, with no chatbot response following it,
+produced the same padded sentence over and over; a brief acknowledgment or
+"nothing to add" is a legitimate final entry."""
 
 MAX_LLM_WORDS = 75
 """Hard cap on each LLM Text Response. Each reply both responds and invites

@@ -446,10 +446,16 @@ function wordCount(text) {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
+/* The minimum comes from the server per step: 15 words for the replies a
+ * chatbot response follows, just "not empty" for the final one. */
+function minWords() {
+  return (state.input && state.input.min_words) || state.config.min_response_words;
+}
+
 function updateWordCount() {
   const n = wordCount(els['text-input'].value);
-  const min = state.config.min_response_words;
-  els['word-count'].textContent = n >= min ? `${n} words` : `${n} of ${min} words minimum`;
+  const min = minWords();
+  els['word-count'].textContent = (min <= 1 || n >= min) ? `${n} words` : `${n} of ${min} words minimum`;
   els['word-count'].className = 'word-count ' + (n >= min ? 'met' : 'short');
 }
 
@@ -458,7 +464,7 @@ function onTextInput() {
   const ta = els['text-input'];
   ta.style.height = 'auto';
   ta.style.height = Math.min(ta.scrollHeight, 220) + 'px';
-  if (wordCount(ta.value) >= state.config.min_response_words) {
+  if (wordCount(ta.value) >= minWords()) {
     ta.classList.remove('invalid');
     hide(els['text-error']);
   }
@@ -476,10 +482,10 @@ async function onTextSubmit(e) {
   if (state.busy || !state.input) return;
   const raw = els['text-input'].value.trim();
   const n = wordCount(raw);
-  const min = state.config.min_response_words;
+  const min = minWords();
   if (n < min) {
     els['text-input'].classList.add('invalid');
-    show(els['text-error'], `Please write at least ${min} words (${n} so far).`);
+    show(els['text-error'], n === 0 ? 'Please type a reply.' : `Please write at least ${min} words (${n} so far).`);
     sendEvent('validation_blocked', { step: state.input.step, reason: 'below_min_words', words: n });
     return;
   }

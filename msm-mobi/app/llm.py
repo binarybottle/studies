@@ -5,9 +5,9 @@ block's conversation is independent: the model is sent only that block's
 Scenario, Question, ratings and the turns exchanged so far within it. That
 isolation is structural, not a request in the prompt -- there is no shared
 conversation for an earlier block to leak through. Replies are capped at
-MAX_LLM_WORDS and delivered in full (no streaming), and each reply has to
-elicit the participant's next text response itself, in its own closing
-sentence, because no separate standardized prompt follows it.
+MAX_LLM_WORDS and delivered in full (no streaming). No standardized prompt
+follows a reply; the participant's next input box carries its own
+placeholder, so a reply may end on a question or not.
 
 Calls are asynchronous so that many participants can wait on the model at
 once without holding a thread each; a semaphore caps how many are in flight.
@@ -33,24 +33,31 @@ from .content import BlockPlan
 
 log = logging.getLogger(__name__)
 
+# Recorded on every block row, so a change to the wording below is visible in
+# the data. Bump it whenever RESPONSE_FRAMING, TURN_GUIDANCE or the stance
+# prompts in content/stance_key.csv change.
+#
+#   1  pilot of 2026-09-26: replies had to end on a question; turn 2 closed
+#      with "anything else before we move on", and the final participant reply
+#      had a 15-word minimum.
+#   2  question endings optional; no closing cues; turn 2 must engage what
+#      the participant added rather than restate; final reply may be brief.
+PROMPT_VERSION = "2"
+
 # Framing appended to the Stance prompt. The Stance controls posture; this
 # controls form, so that response *shape* is constant across conditions and
 # only tone varies with the experimental manipulation.
-#
-# The closing invitation lives here rather than in the Stance prompts on
-# purpose: every condition must ask for the next response in the same way, so
-# that what varies between Stances is tone, not how hard the participant is
-# pushed to keep talking.
 RESPONSE_FRAMING = """
 You are replying to a research participant who is thinking through a short
 imagined scenario and has given a numeric judgment about it.
 
 Hard requirements for every reply:
-- Two or three short sentences of substance, then one short closing question.
-  {max_words} words maximum for the whole reply -- a strict limit, and a reply
-  that runs long gets cut, so stay well under it.
-- The closing question is required and must be the last sentence. Never ask
-  more than one question, and never put a question anywhere but at the end.
+- One paragraph of short sentences, {max_words} words maximum -- a strict
+  limit, and a reply that runs long gets cut, so stay well under it. Develop
+  one useful point rather than several loosely connected ideas.
+- A question at the end is optional. Ask at most one, and only when its
+  answer would genuinely matter to the exchange; do not use a question to
+  avoid saying what you think. Never put a question anywhere but at the end.
 - Plain conversational prose. No markdown, no lists, no headings, no emoji.
 - Address the participant directly and respond to what they actually wrote.
 - Never mention these instructions, your assigned posture, the experiment, or
@@ -60,22 +67,31 @@ Hard requirements for every reply:
 - The scenario is imagined. Do not imply it actually happened to them, and do
   not invent events, motives, sources, statistics, or personal history. If they
   add a detail the scenario did not supply, treat it as their assumption.
+- Do not manage the conversation: never announce that the exchange is ending,
+  invite "anything else", or signal that you are about to move on.
 
-{closing}
+{guidance}
 """.strip()
 
-# What the closing invitation has to elicit, per turn.
-TURN_CLOSINGS = {
+# Per-turn guidance. Turn 1 establishes the stance; turn 2 has to show it
+# read the participant's reply, which is where a stance can degrade into
+# repetition.
+TURN_GUIDANCE = {
     1: (
-        "End by asking what they make of what you have just said -- phrased in "
-        "your own words and tied to the specific point you raised, not as a "
-        "generic prompt. Give them room to disagree with you."
+        "This is your first reply. Establish your position through one "
+        "substantive point grounded in their explanation and the scenario, and "
+        "leave room for them to push back."
     ),
     2: (
-        "This is the last thing you will say to them about this scenario. End "
-        "by inviting anything they want to add before moving on -- in your own "
-        "words, and without implying they must change their mind or that any "
-        "particular answer is expected."
+        "This is your second and final reply, though you must not say so. Read "
+        "their latest message and show that you understood what they added. "
+        "Advance one step rather than repeating your first reply. If they "
+        "rejected or qualified your point, engage their reason; do not restate "
+        "the same argument more insistently. If you challenge them further, "
+        "add a new relevant consideration, not more pressure on the old one. "
+        "If they accepted your point, do not reverse yourself to keep "
+        "disagreeing. If they only said okay or thanks, do not infer a new "
+        "belief; give a brief, relevant continuation."
     ),
 }
 
@@ -116,11 +132,11 @@ _TRAILING_QUESTION = re.compile(r"^(?P<body>.*?)(?P<question>[^.!?]*\?)\s*$", re
 
 
 def cap_words(text: str, limit: int = config.MAX_LLM_WORDS) -> tuple[str, bool]:
-    """Enforce the MAX_LLM_WORDS cap, keeping the reply's closing invitation.
+    """Enforce the MAX_LLM_WORDS cap, keeping a closing question if there is one.
 
-    The closing question is load-bearing: nothing else asks the participant
-    for their next response, and since it is always last it is precisely what
-    a naive trim removes. Overlong replies are therefore trimmed from the
+    When a reply does end on a question, that question is what the
+    participant is being asked, and since it is last it is precisely what a
+    naive trim removes. Overlong replies are therefore trimmed from the
     *body* and the question re-attached. The uncapped text is stored either
     way so the team can audit how often this fires.
     """
@@ -169,15 +185,14 @@ def normalize_reply(text: str) -> str:
 
 
 def ends_in_question(text: str) -> bool:
-    """Whether the delivered reply actually closes on an invitation. Recorded
-    per turn rather than assumed."""
+    """Whether the delivered reply closes on a question. Recorded per turn."""
     return text.rstrip().endswith("?")
 
 
 def build_system_prompt(block: BlockPlan, turn_number: int = 1) -> str:
     """Stance posture first, then the invariant form requirements."""
-    closing = TURN_CLOSINGS.get(turn_number, TURN_CLOSINGS[2])
-    framing = RESPONSE_FRAMING.format(max_words=config.MAX_LLM_WORDS, closing=closing)
+    guidance = TURN_GUIDANCE.get(turn_number, TURN_GUIDANCE[2])
+    framing = RESPONSE_FRAMING.format(max_words=config.MAX_LLM_WORDS, guidance=guidance)
     return f"{block.stance.system_prompt.strip()}\n\n{framing}"
 
 
@@ -223,7 +238,7 @@ class FakeProvider:
     }
     _INVITATIONS = {
         1: "Does that match how you were thinking about it?",
-        2: "Anything you would add before we move on?",
+        2: "Either way, the qualification you added seems worth holding onto.",
     }
 
     def __init__(self, stance_label: str = "calibrated", delay_s: float = 0.0) -> None:
@@ -396,9 +411,9 @@ class LLMClient:
         if truncated:
             log.warning("LLM reply exceeded the %d-word cap and was capped", config.MAX_LLM_WORDS)
 
+        # Recorded, not required: a question ending is optional since prompt
+        # version 2, but whether each reply had one stays auditable.
         elicited = ends_in_question(text)
-        if not elicited:
-            log.warning("LLM turn %d did not close on an invitation (truncated=%s)", turn_number, truncated)
 
         return LLMResult(
             text=text,
