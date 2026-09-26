@@ -81,6 +81,9 @@ async def run(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
+    # Keep stdout and stderr in order when piped, so a failure prints after
+    # the prompt it followed rather than before it.
+    sys.stdout.reconfigure(line_buffering=True)
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--stance", default="calibrated", choices=["aligning", "calibrated", "counterbalancing"])
     ap.add_argument("--provider", default="litellm", choices=["litellm", "fake"])
