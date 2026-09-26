@@ -49,3 +49,33 @@ study.arnoklein.info, dash.study.childmind.org {
 		Referrer-Policy "no-referrer"
 	}
 }
+
+# MSM-MoBI: the scenario-conversation study. Same shape as above; the data
+# exports under /admin/* are restricted to the same addresses.
+msm-mobi.childmind.org {
+	reverse_proxy msm-mobi:8000
+
+	@admin path /admin/*
+	handle @admin {
+		route {
+			@blocked not remote_ip 66.108.16.59 2603:7000:6400:6b1::/64
+			respond @blocked 404
+			reverse_proxy msm-mobi:8000
+		}
+	}
+	encode gzip
+
+	log {
+		output file /data/access-msm-mobi.log {
+			roll_size 10mb
+			roll_keep 5
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+	}
+}

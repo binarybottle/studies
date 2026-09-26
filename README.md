@@ -6,13 +6,16 @@ TLS, one container per study, SQLite on a named Docker volume per study.
 This document covers the droplet: creating it, deploying to it, operating it,
 backing it up. It is study-agnostic. What a study *does* — the participant
 journey, its vendor wiring, its Prolific setup, its environment variables and
-its data export — is documented in that study's own directory. There is
-currently one:
+its data export — is documented in that study's own directory. There are
+two:
 
-- **[dash/README.md](dash/README.md)** — the DASH text-message screener pilot.
+- **[dash/README.md](dash/README.md)** — the DASH text-message screener
+  pilot, whose interview runs on a hosted Retell agent.
+- **[msm-mobi/README.md](msm-mobi/README.md)** — the MSM-MoBI scenario
+  conversations, a self-contained web app that calls the model directly.
 
-Commands below name the `dash` service because that is the only one so far.
-For a second study, substitute its service name; nothing else changes.
+Commands below name the `dash` service as the example. For the other study
+substitute `msm-mobi`; nothing else changes.
 
 The live droplet is **167.71.248.46** (`ssh arno@167.71.248.46`). Part 1
 writes `DROPLET_IP` because it describes building a droplet that does not
@@ -30,9 +33,9 @@ exist yet; Parts 2 and 3 use the real address.
 studies/
     compose.yml          Caddy + one service per study
     Caddyfile            TLS, routing, admin IP restriction
-    backup.sh            Nightly SQLite backup, 30-day retention
+    backup.sh            Nightly SQLite backup of every study, 30-day retention
     retell.md            Retell agents and flows: setup, publishing, secrets
-    dash/                One study. See dash/README.md.
+    dash/                The DASH study. See dash/README.md.
         README.md        What the study is and how it is configured
         STATUS.md        Point-in-time handoff briefing
         Dockerfile       Pinned Python 3.12 runtime
@@ -41,6 +44,13 @@ studies/
         study_site.py    The application
         store.py         SQLite persistence
         optin/           A2P campaign paperwork; not deployed
+    msm-mobi/            The MSM-MoBI study. See msm-mobi/README.md.
+        README.md        What the study is and how it is configured
+        Dockerfile, requirements.txt, env.example   As above
+        app/             The application (FastAPI + a static browser UI)
+        content/         Scenario bank, categories, stance prompts
+        scripts/         Model check, load simulation, content import
+        tests/           pytest suite
 ```
 
 Everything a study needs lives in that study's directory, including material
@@ -230,8 +240,9 @@ only be edited there.
 | What changed | Command (on the droplet, in `~/studies`) |
 |---|---|
 | `study_site.py`, `store.py` | `docker compose up -d --build dash` |
-| `requirements.txt`, `Dockerfile` | `docker compose up -d --build dash` (slow — reinstalls wheels) |
-| `dash/.env` | `docker compose up -d dash` — no build; recreates the container so it re-reads the file. Edit it on the droplet: it is not in the repository |
+| `msm-mobi/app/`, `msm-mobi/content/` | `docker compose up -d --build msm-mobi` |
+| `requirements.txt`, `Dockerfile` | `docker compose up -d --build <service>` (slow — reinstalls wheels; msm-mobi's LiteLLM takes a minute or more) |
+| a study's `.env` | `docker compose up -d <service>` — no build; recreates the container so it re-reads the file. Edit it on the droplet: it is not in the repository |
 | `Caddyfile` | `docker compose up -d --force-recreate caddy` — **not** `caddy reload`, see below |
 | `compose.yml` | `docker compose up -d` |
 | Nothing; just wedged | `docker compose restart dash` |
@@ -346,7 +357,10 @@ crontab -e
 
 Uses SQLite's backup API rather than `cp`, since the database runs in WAL mode
 and a plain copy taken mid-write can be unrestorable. Verifies the copy opens
-and counts rows before keeping it. Prunes past 30 days.
+and counts rows before keeping it. Prunes past 30 days. One file per study
+per night, `dash-<date>.db` and `msm-mobi-<date>.db`; a study whose container
+is not running is skipped rather than failing the job. The list of studies is
+`SERVICES` at the top of the script.
 
 Copy backups off the droplet periodically — DigitalOcean's droplet backups
 are weekly, which is coarser than a study needs:
@@ -360,27 +374,55 @@ rsync -av arno@167.71.248.46:~/studies/backups/ ./backups/
 ```bash
 docker compose stop dash
 docker run --rm -v studies_dash_data:/data -v ~/studies/backups:/b \
-    alpine cp /b/study-2026-08-20.db /data/study.db
+    alpine cp /b/dash-2026-08-20.db /data/study.db
 docker compose start dash
 ```
 
-The volume is `studies_dash_data` — Compose prefixes the volume name from
-`compose.yml` with the project directory name. Confirm with `docker volume ls`
-before typing it.
+The volume is `studies_dash_data` (`studies_msm_mobi_data` for the other
+study) — Compose prefixes the volume name from `compose.yml` with the project
+directory name. Confirm with `docker volume ls` before typing it.
 
-## Adding a second study
+## Adding a study
 
-1. Copy `dash/` to a new directory, e.g. `screener2/`. The copy brings
-   `README.md` and `optin/` with it, which is the point: the new study's
-   documentation and campaign text start from wording that already passed
-   review, and are edited rather than written.
-2. Add a service block in `compose.yml` pointing at it, with its own volume.
+1. Copy the closest existing study directory. `dash/` is the template for
+   a Retell-hosted interview and brings its `optin/` campaign text; `msm-mobi/`
+   is the template for a self-contained web task that calls a model directly.
+   Either way the new study's documentation and consent text start from
+   wording that already passed review, and are edited rather than written.
+2. Add a service block in `compose.yml` pointing at it, with its own volume,
+   and add it to Caddy's `depends_on`.
 3. Add a site block in `Caddyfile` for the new hostname.
-4. Add the DNS A record.
-5. `docker compose up -d`
+4. Add the service name to `SERVICES` in `backup.sh`.
+5. Add the DNS A record.
+6. Create the study's `.env` on the droplet, then `docker compose up -d`.
 
 Studies stay isolated: separate containers, separate volumes, separate
 databases.
+
+### Bringing up msm-mobi the first time
+
+Everything above is in place in the repository. What remains is on the
+droplet and at the DNS provider:
+
+```bash
+# DNS: A record msm-mobi.childmind.org -> 167.71.248.46, then confirm:
+dig +short msm-mobi.childmind.org @1.1.1.1
+
+ssh arno@167.71.248.46
+cd ~/studies && git pull
+cp msm-mobi/env.example msm-mobi/.env && chmod 600 msm-mobi/.env
+nano msm-mobi/.env            # ANTHROPIC_API_KEY, ADMIN_TOKEN, the two Prolific codes
+docker compose up -d --build msm-mobi
+docker compose up -d --force-recreate caddy   # new site block
+docker compose logs -f caddy                  # watch for certificate issuance
+docker compose exec msm-mobi python scripts/check_llm.py --repeat 3
+```
+
+Then walk `https://msm-mobi.childmind.org/start?PROLIFIC_PID=walkthrough-1`
+end to end. Consider the 1 GB droplet's memory before opening the study to
+more than a few dozen participants at once: LiteLLM alone is ~200 MB
+resident, on top of DASH and Caddy. A 2 GB droplet is the safe size for two
+studies.
 
 ## Troubleshooting
 

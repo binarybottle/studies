@@ -9,3 +9,6 @@ study.db-shm
 .DS_Store
 # fix_flow.py --token writes the shared secret into the flow.
 *.fixed.json
+# Local runs of a study write here; the droplet uses a volume instead.
+*/data/
+.venv/

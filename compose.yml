@@ -7,10 +7,9 @@
 #   docker compose logs -f dash   # follow one study's logs
 #   docker compose up -d --build dash   # redeploy after a code change
 #
-# The dash_data volume holds study.db, which is the only link between Retell
-# transcripts and Prolific submissions. It is deliberately a named volume
-# rather than a bind mount so that `docker compose down` cannot remove it by
-# accident, and it is what the backup cron job archives.
+# Each study's data volume holds its study.db. They are deliberately named
+# volumes rather than bind mounts so that `docker compose down` cannot remove
+# them by accident, and they are what the backup cron job archives.
 
 services:
   caddy:
@@ -25,6 +24,7 @@ services:
       - caddy_config:/config
     depends_on:
       - dash
+      - msm-mobi
 
   dash:
     build: ./dash
@@ -52,7 +52,29 @@ services:
       retries: 3
       start_period: 10s
 
+  msm-mobi:
+    build: ./msm-mobi
+    restart: unless-stopped
+    env_file:
+      - ./msm-mobi/.env
+    environment:
+      STUDY_DB_PATH: /data/study.db
+    volumes:
+      - msm_mobi_data:/data
+    expose:
+      - "8000"
+    healthcheck:
+      # The public information page touches no participant state.
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # LiteLLM takes ~10 s to import on this droplet before the app can answer.
+      start_period: 40s
+
 volumes:
   caddy_data:
   caddy_config:
   dash_data:
+  msm_mobi_data:
