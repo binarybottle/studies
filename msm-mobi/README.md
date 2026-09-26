@@ -79,6 +79,7 @@ the same effect. There is no way to restart from the beginning.
 | `content/` | The scenario bank, categories, stance prompts, practice scenario |
 | `scripts/check_llm.py` | Sends one block-shaped request through the real model path and reports latency |
 | `scripts/simulate.py` | Drives N simulated participants through the whole study at once |
+| `scripts/screen.py` | Applies the low-effort criteria to downloaded exports and prints flagged participants with their replies |
 | `scripts/import_retell_bank.py` | Produced the current `content/scenario_key.csv` from the Retell prototype |
 | `tests/` | `pytest`: the full journey, resume, input rules, the stance-leak assertion, counterbalancing |
 
@@ -180,8 +181,22 @@ to be tuned on the first batches rather than applied blindly:
 | `focus_lost_seconds` | many minutes | left the tab; not disqualifying by itself |
 | `paste_blocked` | > 0 | tried to paste replies in; read their text |
 
-Flag on two or more of these together, then read the flagged transcripts
-in `blocks.csv` before deciding. Under Prolific's rules a submission can be
+`scripts/screen.py` applies exactly these criteria to the downloaded files
+and prints who to look at, why, and — with `--blocks … --show` — their
+replies, so the judgement is made from the transcript rather than the
+numbers:
+
+```bash
+python3 scripts/screen.py ~/Desktop/msm-quality-$(date +%F).csv \
+    --blocks ~/Desktop/msm-blocks-$(date +%F).csv --show
+```
+
+It flags a participant who failed both attention checks, or who trips two
+or more of the other criteria; `--all` lists everyone, and the thresholds
+are flags (`--help`). `SIM-*` and `walkthrough-*` IDs are skipped unless
+`--keep-test` is given. It runs on plain Python 3 with no dependencies, so
+it works on the laptop the exports were downloaded to. Flag on two or more
+of these together, then read the flagged transcripts before deciding. Under Prolific's rules a submission can be
 rejected only for demonstrable non-engagement, so keep the transcript that
 justifies it. Prolific-side filters (approval rate ≥ 98%, a minimum number
 of previous submissions, fluent English) remove most of this before it
