@@ -81,7 +81,7 @@ participant half a second per block."""
 STUDY_NAME = os.environ.get("STUDY_NAME", "Scenario conversations pilot")
 ORG_NAME = os.environ.get("ORG_NAME", "Child Mind Institute")
 CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "olivia.fitzpatrick@childmind.org")
-DURATION_TEXT = os.environ.get("DURATION_TEXT", "30 to 45 minutes")
+DURATION_TEXT = os.environ.get("DURATION_TEXT", "45 to 60 minutes")
 PRIVACY_URL = "https://childmind.org/privacy/"
 TERMS_URL = "https://childmind.org/terms/"
 
