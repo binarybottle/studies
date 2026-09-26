@@ -28,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import config  # noqa: E402
 from app.content import ContentLibrary  # noqa: E402
-from app.llm import PROMPT_VERSION, LLMClient, Turn, build_system_prompt  # noqa: E402
+from app.llm import PROMPT_VERSION, LLMClient, LLMError, Turn, build_system_prompt  # noqa: E402
 
 
 async def run(args: argparse.Namespace) -> int:
@@ -60,8 +60,13 @@ async def run(args: argparse.Namespace) -> int:
     client = LLMClient(args.provider)
     latencies, elicited = [], 0
     for i in range(args.repeat):
-        result = await client.respond(block, answer_score_1=70, confidence_score_1=55,
-                                      turns=list(turns), turn_number=args.turn)
+        try:
+            result = await client.respond(block, answer_score_1=70, confidence_score_1=55,
+                                          turns=list(turns), turn_number=args.turn)
+        except LLMError as exc:
+            # The vendor's own message is the useful part; the LiteLLM stack is not.
+            print(f"FAILED: {str(exc).splitlines()[0][:300]}", file=sys.stderr)
+            return 1
         latencies.append(result.latency_ms)
         elicited += result.elicited
         print(f"[{i + 1}] {result.latency_ms} ms | {len(result.text.split())} words | "
