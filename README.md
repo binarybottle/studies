@@ -405,8 +405,8 @@ Everything above is in place in the repository. What remains is on the
 droplet and at the DNS provider:
 
 ```bash
-# DNS: A record msm-mobi.childmind.org -> 167.71.248.46, then confirm:
-dig +short msm-mobi.childmind.org @1.1.1.1
+# DNS: A record msm-mobi.study.childmind.org -> 167.71.248.46, then confirm:
+dig +short msm-mobi.study.childmind.org @1.1.1.1
 
 ssh arno@167.71.248.46
 cd ~/studies && git pull
@@ -418,7 +418,7 @@ docker compose logs -f caddy                  # watch for certificate issuance
 docker compose exec msm-mobi python scripts/check_llm.py --repeat 3
 ```
 
-Then walk `https://msm-mobi.childmind.org/start?PROLIFIC_PID=walkthrough-1`
+Then walk `https://msm-mobi.study.childmind.org/start?PROLIFIC_PID=walkthrough-1`
 end to end. Consider the 1 GB droplet's memory before opening the study to
 more than a few dozen participants at once: LiteLLM alone is ~200 MB
 resident, on top of DASH and Caddy. A 2 GB droplet is the safe size for two

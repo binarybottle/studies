@@ -135,7 +135,7 @@ declines. Someone who consents and never starts *does* consume one; check
 The study URL is `/start` with **no query string**:
 
 ```
-https://msm-mobi.childmind.org/start
+https://msm-mobi.study.childmind.org/start
 ```
 
 Prolific appends `?PROLIFIC_PID=…&STUDY_ID=…&SESSION_ID=…` itself. Do not
@@ -224,7 +224,7 @@ to talk to the model.
    indicator changes text.
 
 2. **Walk the participant path** yourself:
-   `https://msm-mobi.childmind.org/start?PROLIFIC_PID=walkthrough-1`. Refresh
+   `https://msm-mobi.study.childmind.org/start?PROLIFIC_PID=walkthrough-1`. Refresh
    in the middle of a block and confirm you land on the same step. Then
    exclude that ID from the export.
 
@@ -242,9 +242,9 @@ vendor. From your laptop, on the allow-listed IP:
 TOKEN=$(ssh arno@167.71.248.46 \
     'cd ~/studies && docker compose exec -T msm-mobi printenv ADMIN_TOKEN' \
     | /usr/bin/tr -d ' \t\r\n')
-curl -s "https://msm-mobi.childmind.org/admin/blocks.csv?token=$TOKEN" \
+curl -s "https://msm-mobi.study.childmind.org/admin/blocks.csv?token=$TOKEN" \
     -o ~/Desktop/msm-blocks-$(date +%F).csv
-curl -s "https://msm-mobi.childmind.org/admin/participants.csv?token=$TOKEN" \
+curl -s "https://msm-mobi.study.childmind.org/admin/participants.csv?token=$TOKEN" \
     -o ~/Desktop/msm-participants-$(date +%F).csv
 ```
 

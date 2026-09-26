@@ -52,7 +52,7 @@ study.arnoklein.info, dash.study.childmind.org {
 
 # MSM-MoBI: the scenario-conversation study. Same shape as above; the data
 # exports under /admin/* are restricted to the same addresses.
-msm-mobi.childmind.org {
+msm-mobi.study.childmind.org {
 	reverse_proxy msm-mobi:8000
 
 	@admin path /admin/*
