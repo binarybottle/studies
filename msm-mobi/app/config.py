@@ -47,14 +47,15 @@ REAL_BLOCK_COUNT = 12
 PRACTICE_BLOCK_INDEX = 0
 """Practice block is block 0; real blocks are 1-12."""
 
-MIN_RESPONSE_WORDS = 15
-"""Minimum whitespace-delimited tokens for User Text Response 1 and 2."""
+MIN_RESPONSE_WORDS = 1
+"""Free-text replies only have to be non-empty. The lab protocol's 15-word
+floor was dropped after the first online pilot: it produced padded, repeated
+sentences rather than engagement. Low-effort entries are flagged after the
+fact instead (the quality export), not blocked at entry."""
 
 MIN_FINAL_RESPONSE_WORDS = 1
-"""User Text Response 3 only has to be non-empty. The pilot showed that a
-15-word minimum on the last reply, with no chatbot response following it,
-produced the same padded sentence over and over; a brief acknowledgment or
-"nothing to add" is a legitimate final entry."""
+"""User Text Response 3, kept separate so the two can differ again if the
+team wants a floor on the first replies only."""
 
 MAX_LLM_WORDS = 75
 """Hard cap on each LLM Text Response. Each reply both responds and invites

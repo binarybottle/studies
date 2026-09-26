@@ -628,6 +628,15 @@ async def export_participants(token: str) -> Response:
     return Response(buf.getvalue(), media_type="text/csv")
 
 
+@app.get("/admin/quality.csv")
+async def export_quality(token: str) -> Response:
+    """One row per participant with the signals of a low-effort session."""
+    _admin(token)
+    buf = io.StringIO()
+    get_store().export_quality_csv(buf)
+    return Response(buf.getvalue(), media_type="text/csv")
+
+
 @app.get("/admin/events/{pid}.jsonl")
 async def export_events(pid: str, token: str) -> Response:
     """The full event log for one participant, for investigating a report."""

@@ -201,12 +201,13 @@ def test_numeric_validation(client):
     assert client.post(f"/api/session/{token}/submit", json={"step": "answer_1", "value": "0"}).status_code == 200
 
 
-def test_text_minimum_words(client):
+def test_text_must_not_be_empty(client):
     token = open_session(client)["session"]
     client.post(f"/api/session/{token}/submit", json={"step": "answer_1", "value": 40})
     client.post(f"/api/session/{token}/submit", json={"step": "confidence_1", "value": 60})
-    r = client.post(f"/api/session/{token}/submit", json={"step": "text_1", "value": "too short"})
-    assert r.status_code == 422 and "15 words" in r.json()["detail"]
+    assert client.post(f"/api/session/{token}/submit", json={"step": "text_1", "value": "  \n "}).status_code == 422
+    r = client.post(f"/api/session/{token}/submit", json={"step": "text_1", "value": "Gut feeling."})
+    assert r.status_code == 200 and r.json()["awaiting_llm"]
 
 
 def test_answer_1_prompt_is_templated(client):
@@ -252,7 +253,6 @@ def test_final_reply_may_be_brief_but_not_empty(client):
     for step, value in (("answer_1", 40), ("confidence_1", 60), ("text_1", WORDS)):
         client.post(f"/api/session/{token}/submit", json={"step": step, "value": value})
     client.post(f"/api/session/{token}/llm")
-    view = client.post(f"/api/session/{token}/submit", json={"step": "text_2", "value": "too short"}).json()
     assert client.post(f"/api/session/{token}/submit", json={"step": "text_2", "value": WORDS}).status_code == 200
     view = client.post(f"/api/session/{token}/llm").json()
     assert view["input"]["step"] == "text_3" and view["input"]["min_words"] == config.MIN_FINAL_RESPONSE_WORDS
@@ -355,3 +355,25 @@ def test_admin_exports_require_the_token(client):
     assert "P1" in r.text and "in_task" in r.text
     r = client.get("/admin/events/P1.jsonl?token=test-admin-token")
     assert "session_started" in r.text
+
+
+def test_quality_export_summarises_each_participant(client):
+    import csv, io
+    view = open_session(client)
+    token = view["session"]
+    view = run_block(client, token, view)          # practice
+    view = run_block(client, token, view)          # block 1, every reply identical
+    client.post(f"/api/session/{token}/event",
+                json={"event": "window_focus_regained", "detail": {"reason": "focus", "unfocused_ms": 4000}})
+    client.post(f"/api/session/{token}/event",
+                json={"event": "validation_blocked", "detail": {"reason": "paste_blocked", "kind": "paste"}})
+    r = client.get("/admin/quality.csv?token=test-admin-token")
+    assert r.status_code == 200
+    rows = list(csv.DictReader(io.StringIO(r.text)))
+    row = next(x for x in rows if x["pid"] == "P1")
+    assert row["stage"] == "in_task" and row["blocks_completed"] == "1"
+    assert row["median_reply_words"] == str(len(WORDS.split()))
+    assert row["distinct_reply_ratio"] == "0.33"      # one text used three times
+    assert row["rating_sd"] == "" and row["unchanged_rating_share"] == "1.0"
+    assert row["focus_lost_seconds"] == "4" and row["paste_blocked"] == "1"
+    assert row["prompt_version"]

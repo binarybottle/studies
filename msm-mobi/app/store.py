@@ -364,6 +364,95 @@ class Store:
         for r in rows:
             w.writerow({c: r[c] for c in self.PARTICIPANT_EXPORT_COLUMNS})
 
+    QUALITY_COLUMNS = (
+        "pid", "stage", "blocks_completed", "total_minutes",
+        "median_reply_words", "min_reply_words", "distinct_reply_ratio",
+        "median_read_seconds", "min_read_seconds",
+        "rating_sd", "unchanged_rating_share",
+        "focus_lost_seconds", "paste_blocked", "prompt_version",
+    )
+
+    def export_quality_csv(self, out: Any) -> None:
+        """One row per participant with the signals a low-effort session
+        leaves behind, so exclusion criteria are a filter rather than a
+        transcript read. Nothing here is a verdict; a short reply can be a
+        good one. The columns:
+
+        median_reply_words / min_reply_words   over every free-text reply
+        distinct_reply_ratio    unique reply texts / replies; near 1 is
+                                normal, well below means the same sentence
+                                was reused across blocks
+        median_read_seconds / min_read_seconds  from the Scenario appearing
+                                to Answer Score 1; a few seconds means the
+                                scenario was not read
+        rating_sd               spread of Answer Score 1 across blocks; 0 is
+                                straight-lining
+        unchanged_rating_share  blocks where Answer Score 2 == Answer Score 1
+        focus_lost_seconds      time the tab was hidden or unfocused
+        paste_blocked           attempts to paste into a text box
+        """
+        import statistics
+
+        def secs(a: str | None, b: str | None) -> float | None:
+            if not a or not b:
+                return None
+            from datetime import datetime
+            return (datetime.fromisoformat(b) - datetime.fromisoformat(a)).total_seconds()
+
+        with self._lock:
+            participants = list(self._conn.execute("SELECT * FROM participants ORDER BY created_at"))
+            blocks = list(self._conn.execute("SELECT * FROM blocks WHERE is_practice = '0'"))
+            events = list(self._conn.execute(
+                "SELECT participant_id, event, payload FROM events "
+                "WHERE event IN ('window_focus_regained', 'validation_blocked')"
+            ))
+
+        by_pid: dict[str, list[sqlite3.Row]] = {}
+        for b in blocks:
+            by_pid.setdefault(b["participant_id"], []).append(b)
+        focus: dict[str, float] = {}
+        pastes: dict[str, int] = {}
+        for e in events:
+            payload = json.loads(e["payload"]) if e["payload"] else {}
+            if e["event"] == "window_focus_regained":
+                focus[e["participant_id"]] = focus.get(e["participant_id"], 0.0) + float(payload.get("unfocused_ms") or 0) / 1000
+            elif payload.get("reason") == "paste_blocked":
+                pastes[e["participant_id"]] = pastes.get(e["participant_id"], 0) + 1
+
+        w = csv.DictWriter(out, fieldnames=list(self.QUALITY_COLUMNS))
+        w.writeheader()
+        for p in participants:
+            rows = by_pid.get(p["pid"], [])
+            done = [r for r in rows if r["activation_score"]]
+            words = [int(r[f"user_text_{n}_words"]) for r in rows for n in (1, 2, 3) if r[f"user_text_{n}_words"]]
+            texts = [r[f"user_text_{n}"].strip().lower() for r in rows for n in (1, 2, 3) if r[f"user_text_{n}"]]
+            reads = [s for s in (secs(r["scenario_shown_at"], r["answer_score_1_at"]) for r in rows) if s is not None]
+            first = [int(r["answer_score_1"]) for r in rows if r["answer_score_1"]]
+            pairs = [(int(r["answer_score_1"]), int(r["answer_score_2"])) for r in rows if r["answer_score_1"] and r["answer_score_2"]]
+            total = None
+            if p["started_at"] and (p["completed_at"] or rows):
+                end = p["completed_at"] or max(
+                    (float(datetime_to_unix(r[c])) for r in rows for c in ("advanced_at", "activation_score_at") if r[c]),
+                    default=None,
+                )
+                total = round((end - p["started_at"]) / 60, 1) if end else None
+            w.writerow({
+                "pid": p["pid"],
+                "stage": p["stage"],
+                "blocks_completed": len(done),
+                "total_minutes": total,
+                "median_reply_words": statistics.median(words) if words else None,
+                "min_reply_words": min(words) if words else None,
+                "distinct_reply_ratio": round(len(set(texts)) / len(texts), 2) if texts else None,
+                "median_read_seconds": round(statistics.median(reads), 1) if reads else None,
+                "min_read_seconds": round(min(reads), 1) if reads else None,
+                "rating_sd": round(statistics.pstdev(first), 1) if len(first) > 1 else None,
+                "unchanged_rating_share": round(sum(a == b for a, b in pairs) / len(pairs), 2) if pairs else None,
+                "focus_lost_seconds": round(focus.get(p["pid"], 0.0)),
+                "paste_blocked": pastes.get(p["pid"], 0),
+                "prompt_version": rows[0]["prompt_version"] if rows else None,
+            })
+
     def export_events(self, out: Any, pid: str) -> None:
         with self._lock:
             rows = list(
@@ -392,6 +481,12 @@ def _iso(wall: float) -> str:
     from datetime import datetime, timezone
 
     return datetime.fromtimestamp(wall, tz=timezone.utc).isoformat(timespec="milliseconds")
+
+
+def datetime_to_unix(iso: str) -> float:
+    from datetime import datetime
+
+    return datetime.fromisoformat(iso).timestamp()
 
 
 _store: Store | None = None

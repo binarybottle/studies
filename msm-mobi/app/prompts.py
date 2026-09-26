@@ -21,7 +21,7 @@ TEXT_1 = "You rated that {answer_score_1} out of 100. What made you give that sc
 # question. The third says a short reply is fine: nothing follows it, and a
 # word minimum there produced padded repetition in the pilot.
 TEXT_PLACEHOLDER = {
-    "text_1": "Type your response...",
+    "text_1": "Type your response in your own words...",
     "text_2": "Type your reply...",
     "text_3": "Your reply. A short one is fine if you have nothing to add.",
 }

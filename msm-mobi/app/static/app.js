@@ -440,7 +440,8 @@ async function onNumericSubmit(e) {
   await submit(state.input.step, raw, els['numeric-error'], els['numeric-input']);
 }
 
-/* Free text: >= 15 whitespace-delimited words; Enter submits, Shift+Enter newline. */
+/* Free text: at least the server's per-step minimum (currently just "not
+ * empty"); Enter submits, Shift+Enter newline. */
 
 function wordCount(text) {
   return text.trim().split(/\s+/).filter(Boolean).length;

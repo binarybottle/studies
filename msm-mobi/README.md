@@ -37,9 +37,9 @@ Each block, practice included:
 | 1 | Scenario and its Question, with 0/100 anchor labels | `scenario_shown_at` |
 | 2 | Answer Score 1 (0–100) | `answer_score_1` |
 | 3 | Confidence Score 1 (0–100) | `confidence_score_1` |
-| 4 | "You rated that N out of 100. What made you give that score?" — ≥15 words | `user_text_1` |
+| 4 | "You rated that N out of 100. What made you give that score?" — any length, not empty | `user_text_1` |
 | 5 | LLM reply 1 (≤75 words; a closing question is optional) | `llm_text_1`, latency, model |
-| 6 | Reply — ≥15 words | `user_text_2` |
+| 6 | Reply — any length, not empty | `user_text_2` |
 | 7 | LLM reply 2 (must engage what the participant added; no "moving on" cues) | `llm_text_2` |
 | 8 | Final reply — any length, not empty | `user_text_3` |
 | 9 | Answer Score 2 | `answer_score_2` |
@@ -48,9 +48,11 @@ Each block, practice included:
 | 12 | Continue gate (not after block 12) | `advanced_at` |
 
 Every value is timestamped. The practice block always runs the Calibrated
-stance and is flagged `is_practice`. The final reply has no minimum because
-nothing follows it: the first pilot's 15-word floor there produced the same
-padded sentence twelve times over, and participants said so. Navigation is forward-only; the
+stance and is flagged `is_practice`. Free-text replies have no word minimum:
+the lab protocol's 15-word floor produced padded, repeated sentences in the
+first online pilot rather than engagement, and participants said so.
+Low-effort sessions are flagged afterwards instead (`quality.csv`), not
+blocked at entry. Navigation is forward-only; the
 transcript is cleared at each block boundary so no earlier block can be
 re-read. Paste is blocked in the text fields.
 
@@ -139,9 +141,32 @@ A participant who stops part-way gets **no code**: `/finish` tells them to
 return the study on Prolific, or to email for payment covering the part they
 completed. Their data up to that point is in the database.
 
-Set the Prolific study's estimated time from the pilot: twelve blocks with
-two model turns each is roughly 30–45 minutes for a participant who writes
-15-word replies. The instruction text says as much (`DURATION_TEXT`).
+Set the Prolific study's estimated time from the pilot: the first three
+completed sessions took 33–60 minutes. The instruction text says as much
+(`DURATION_TEXT`); revise both together.
+
+### Screening for low effort
+
+There are no attention checks; the design is flag afterwards, not block at
+entry. `quality.csv` gives one row per participant. Reasonable starting
+criteria, to be tuned on the first batches rather than applied blindly:
+
+| Column | Suspicious when | What it usually means |
+|---|---|---|
+| `min_read_seconds` | under ~5 s | rated a scenario without reading it |
+| `distinct_reply_ratio` | under ~0.7 | the same sentence pasted into several boxes |
+| `median_reply_words` | 1–3 | "ok" / "yes" throughout |
+| `rating_sd` | 0 or near it | straight-lining the first rating |
+| `unchanged_rating_share` | 1.0 *and* short replies | never engaged; on its own it is a legitimate result |
+| `focus_lost_seconds` | many minutes | left the tab; not disqualifying by itself |
+| `paste_blocked` | > 0 | tried to paste replies in; read their text |
+
+Flag on two or more of these together, then read the flagged transcripts
+in `blocks.csv` before deciding. Under Prolific's rules a submission can be
+rejected only for demonstrable non-engagement, so keep the transcript that
+justifies it. Prolific-side filters (approval rate ≥ 98%, a minimum number
+of previous submissions, fluent English) remove most of this before it
+arrives.
 
 ## Configuration — `msm-mobi/.env`
 
@@ -239,6 +264,7 @@ in `Caddyfile`; the endpoint deliberately does not say which.
 |---|---|
 | `blocks.csv` | One row per block per participant: category, scenario, stance, every score, every text, both model replies (as shown and as returned), latency, the answering model, timestamps. `is_practice` = 1 for the practice block. |
 | `participants.csv` | One row per Prolific submission: stage, `assignment_index`, model, timestamps. |
+| `quality.csv` | One row per participant with the signals of a low-effort session: reply length, reuse of the same text across blocks, seconds spent on each scenario before rating it, rating spread, tab-hidden time, paste attempts. See [Screening for low effort](#screening-for-low-effort). |
 | `events/<pid>.jsonl` | The full event log for one participant — steps, model calls, focus loss, blocked pastes, rejected submissions — for investigating a report. |
 
 Join to Prolific's own export on `pid` = `Participant id` for demographics
