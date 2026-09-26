@@ -21,6 +21,8 @@ RUN chmod 0644 requirements.txt \
 
 COPY app ./app
 COPY content ./content
+# The pre-flight and export scripts run inside the container too.
+COPY scripts ./scripts
 
 # The database lives on a mounted volume, never in the image. STUDY_DB_PATH is
 # set in compose.yml to point inside that volume.
