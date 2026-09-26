@@ -419,10 +419,9 @@ docker compose exec msm-mobi python scripts/check_llm.py --repeat 3
 ```
 
 Then walk `https://msm-mobi.study.childmind.org/start?PROLIFIC_PID=walkthrough-1`
-end to end. Consider the 1 GB droplet's memory before opening the study to
-more than a few dozen participants at once: LiteLLM alone is ~200 MB
-resident, on top of DASH and Caddy. A 2 GB droplet is the safe size for two
-studies.
+end to end. The droplet was resized to 2 GB / 1 vCPU for the second study:
+LiteLLM alone is ~200 MB resident, on top of DASH and Caddy, and 1 GB was
+tight for both. Both apps are I/O-bound, so one vCPU is enough.
 
 ## Troubleshooting
 

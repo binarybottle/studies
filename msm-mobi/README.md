@@ -9,7 +9,6 @@ configuration template and this document. Hosting is described in the
 [repository README](../README.md).
 
 - [What the participant does](#what-the-participant-does)
-- [Why a web app and not Retell](#why-a-web-app-and-not-retell)
 - [How it fits together](#how-it-fits-together)
 - [Assignment and counterbalancing](#assignment-and-counterbalancing)
 - [The Prolific side](#the-prolific-side)
@@ -34,6 +33,7 @@ Each block, practice included:
 
 | # | Step | Data |
 |---|---|---|
+| 0 | Blocks 1 and 7 only: an attention check ("enter the number 37") in the numeric box | `attention_checks` table |
 | 1 | Scenario and its Question, with 0/100 anchor labels | `scenario_shown_at` |
 | 2 | Answer Score 1 (0–100) | `answer_score_1` |
 | 3 | Confidence Score 1 (0–100) | `confidence_score_1` |
@@ -72,16 +72,17 @@ the same effect. There is no way to restart from the beginning.
 | `app/assign.py` | Counterbalanced assignment (Williams square, rolling scenario window) |
 | `app/content.py` | Loads the content CSVs; resolves a participant's plan |
 | `app/llm.py` | Stance system prompts, block-local context, the 75-word cap, LiteLLM and fake providers |
-| `app/store.py` | SQLite: `participants`, `blocks`, `events`; CSV export |
+| `app/store.py` | SQLite: `participants`, `blocks`, `attention_checks`, `events`; the CSV exports |
 | `app/prompts.py` | All participant-facing copy inside the task |
 | `app/config.py` | Protocol constants and environment-driven settings |
 | `app/static/` | The browser interface: no build step, no dependencies, no external requests |
 | `content/` | The scenario bank, categories, stance prompts, practice scenario |
 | `scripts/check_llm.py` | Sends one block-shaped request through the real model path and reports latency |
 | `scripts/simulate.py` | Drives N simulated participants through the whole study at once |
-| `scripts/screen.py` | Applies the low-effort criteria to downloaded exports and prints flagged participants with their replies |
+| `scripts/download.sh` | Fetches the three exports from the server into a dated folder on your laptop |
+| `scripts/screen.py` | Applies the low-effort criteria to the exports (or the database) and prints flagged participants with their replies |
 | `scripts/import_retell_bank.py` | Produced the current `content/scenario_key.csv` from the Retell prototype |
-| `tests/` | `pytest`: the full journey, resume, input rules, the stance-leak assertion, counterbalancing |
+| `tests/` | `pytest`: the full journey, resume, input rules, attention checks, the stance-leak assertion, counterbalancing, the exports |
 
 **The server owns the flow.** The browser is told only what to render next
 and what single input to collect. It never receives the Stance, the
@@ -144,8 +145,9 @@ return the study on Prolific, or to email for payment covering the part they
 completed. Their data up to that point is in the database.
 
 Set the Prolific study's estimated time from the pilot: the first three
-completed sessions took 33–60 minutes. The instruction text says as much
-(`DURATION_TEXT`); revise both together.
+completed sessions took 33–60 minutes, so the consent page says 45 to 60
+(`DURATION_TEXT` in `.env`). Revise both together if the batches say
+otherwise.
 
 ### Attention checks
 
@@ -195,7 +197,8 @@ has to be recreated to re-read the file.
 | `MSM_LLM_PROVIDER` | `litellm` (real) or `fake` (canned replies, no key). |
 | `MSM_LLM_MAX_CONCURRENCY` | Model calls in flight at once; 32 by default. Raise together with the vendor rate limit. |
 | `MSM_LLM_EFFORT`, `MSM_LLM_FALLBACK_MODELS`, `MSM_LLM_API_BASE`, `MSM_LLM_API_KEY` | Optional; see `env.example`. |
-| `PROLIFIC_CC_COMPLETE`, `PROLIFIC_CC_NO_CONSENT` | The two completion codes. |
+| `PROLIFIC_CC_COMPLETE`, `PROLIFIC_CC_NO_CONSENT` | The completion codes, from the Prolific study's completion-code section. |
+| `PROLIFIC_CC_ATTENTION` | Optional third code for a finished session that failed both attention checks; attach "manually review" in Prolific. |
 | `ADMIN_TOKEN` | Guards `/admin/*`. Empty disables the exports. |
 | `STUDY_NAME`, `ORG_NAME`, `CONTACT_EMAIL`, `DURATION_TEXT` | Shown to participants. |
 
@@ -244,7 +247,12 @@ to talk to the model.
 3. **Check the exports work** (below) before there is anything in them.
 
 4. **Set the Prolific completion codes** in `.env` and the matching actions
-   in Prolific.
+   in Prolific; see [The Prolific side](#the-prolific-side) for which action
+   goes with which.
+
+5. **Deploy between batches, not during one.** A rebuild keeps every session
+   resumable, but a participant mid-session would see new prompt wording
+   from their next turn.
 
 ## Downloading and assessing the data
 
@@ -442,9 +450,11 @@ participant submitting the instant the server answers, ~300 requests per
 second — latency climbs into seconds, which is CPU saturation of one Python
 process and not a shape real participants can produce.
 
-The droplet's 1 GB is the tighter constraint. LiteLLM alone costs the
+The droplet's memory is the tighter constraint: LiteLLM alone costs the
 container ~200 MB resident, and the DASH container and Caddy share the box.
-Upgrade to 2 GB before releasing hundreds of Prolific slots at once.
+It was upgraded to 2 GB / 1 vCPU before the first pilot, which leaves
+headroom for both studies at hundreds of concurrent participants; `free -h`
+on the droplet says how much is left.
 
 ## Troubleshooting
 
