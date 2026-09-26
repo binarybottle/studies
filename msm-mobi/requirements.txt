@@ -1,0 +1,10 @@
+# Pinned for reproducibility. Bump deliberately, never automatically: a study
+# in the field should not change underneath its participants.
+fastapi==0.141.1
+uvicorn[standard]==0.54.0
+pydantic==2.13.5
+python-multipart==0.0.20
+# Model calls. The vendor is chosen by MSM_LLM_MODEL, not by code.
+litellm==1.102.1
+# LiteLLM's retry wrapper imports tenacity lazily and does not declare it.
+tenacity==9.1.4

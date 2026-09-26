@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Scenario conversations</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body data-pid="">
+
+<!-- Inter-block fixation cross: a full-viewport overlay held briefly before
+     each block's Scenario, on the same background as everything else. -->
+<div id="fixation" class="fixation" hidden aria-hidden="true">
+  <div id="fixation-mark" class="fixation-mark"></div>
+</div>
+
+<!-- Start Screen -->
+<section id="start-screen" class="screen" hidden>
+  <div class="bookend">
+    <h1 id="start-title"></h1>
+    <p id="start-body" class="bookend-body"></p>
+    <p id="start-error" class="field-error" role="alert" hidden></p>
+    <button id="start-button" type="button">Start</button>
+  </div>
+</section>
+
+<!-- Task Screen -->
+<main id="task-screen" class="screen" hidden>
+  <header id="statusbar">
+    <span id="status-block"></span>
+  </header>
+
+  <div id="transcript-scroll">
+    <div id="transcript" role="log" aria-live="polite"></div>
+  </div>
+
+  <div id="composer">
+    <!-- Numeric score entry -->
+    <form id="numeric-form" class="entry" hidden autocomplete="off">
+      <div class="scale-anchors">
+        <span class="anchor"><b>0</b> = <span id="numeric-low"></span></span>
+        <span class="anchor"><b>100</b> = <span id="numeric-high"></span></span>
+      </div>
+      <div class="entry-row">
+        <input id="numeric-input" type="text" inputmode="numeric"
+               autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+               aria-label="Score from 0 to 100" placeholder="0-100">
+        <button id="numeric-submit" type="submit">Submit</button>
+      </div>
+      <p id="numeric-error" class="field-error" role="alert" hidden></p>
+    </form>
+
+    <!-- Free-text entry -->
+    <form id="text-form" class="entry" hidden autocomplete="off">
+      <div class="entry-row">
+        <textarea id="text-input" rows="2"
+                  autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                  aria-label="Your response" placeholder="Type your response..."></textarea>
+        <button id="text-submit" type="submit">Submit</button>
+      </div>
+      <div class="entry-meta">
+        <span id="word-count" class="word-count"></span>
+        <span class="hint">Enter to submit &middot; Shift+Enter for a new line</span>
+      </div>
+      <p id="text-error" class="field-error" role="alert" hidden></p>
+    </form>
+
+    <!-- Inter-block continue gate -->
+    <form id="gate-form" class="entry" hidden>
+      <button id="gate-button" type="submit">Continue</button>
+    </form>
+
+    <!-- Thinking indicator: UI chrome only, never part of the transcript -->
+    <div id="thinking" class="entry thinking" hidden aria-live="polite">
+      <span class="dots"><i></i><i></i><i></i></span>
+      <span id="thinking-text">Thinking</span>
+    </div>
+
+    <!-- Connection/error notice -->
+    <div id="fatal" class="entry fatal" hidden role="alert">
+      <p id="fatal-text"></p>
+      <button id="fatal-retry" type="button">Try again</button>
+    </div>
+  </div>
+</main>
+
+<!-- End Screen -->
+<section id="end-screen" class="screen" hidden>
+  <div class="bookend">
+    <h1 id="end-title"></h1>
+    <p id="end-body" class="bookend-body"></p>
+    <a id="finish-link" class="button" href="#">Return to Prolific</a>
+  </div>
+</section>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
