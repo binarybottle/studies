@@ -31,8 +31,9 @@ def open_session(client, pid="P1"):
     return r.json()
 
 
-def run_block(client, token, view):
-    """Drive one block from its opening view to whatever comes after it."""
+def run_block(client, token, view, attention="pass"):
+    """Drive one block from its opening view to whatever comes after it.
+    ``attention`` is "pass" or "fail" for a block that opens on a check."""
     while True:
         if view.get("done"):
             return view
@@ -40,7 +41,11 @@ def run_block(client, token, view):
             view = client.post(f"/api/session/{token}/llm").json()
             continue
         spec = view["input"]
-        value = 55 if spec["type"] == "numeric" else (WORDS if spec["type"] == "text" else True)
+        if spec["step"] == "attention":
+            expected = config.ATTENTION_CHECKS[view["block_index"]][2]
+            value = expected if attention == "pass" else expected + 1
+        else:
+            value = 55 if spec["type"] == "numeric" else (WORDS if spec["type"] == "text" else True)
         r = client.post(f"/api/session/{token}/submit", json={"step": spec["step"], "value": value})
         assert r.status_code == 200, r.text
         view = r.json()
@@ -117,6 +122,72 @@ def test_full_session_ends_with_completion_code(client):
     assert len({r["scenario_label"] for r in real}) == config.REAL_BLOCK_COUNT
     for r in real:
         assert r["llm_text_1"] and r["llm_text_2"] and r["activation_score"] == "55"
+
+
+def test_attention_checks_open_their_blocks_and_never_block(client):
+    """Block 1 and block 7 open on an instructed response; a wrong answer is
+    recorded and the block proceeds as normal."""
+    pid = "P1"
+    view = open_session(client, pid)
+    token = view["session"]
+    view = run_block(client, token, view)                      # practice -> opens block 1
+    assert view["block_index"] == 1 and view["input"]["step"] == "attention"
+    assert view["reset_transcript"] is True
+    assert "scale_low" not in view["input"]
+    assert [m["kind"] for m in view["messages"]] == ["interstitial", "prompt"]
+    assert "37" in view["messages"][-1]["text"]
+
+    # Wrong answer: still proceeds to the Scenario, without a second interstitial.
+    r = client.post(f"/api/session/{token}/submit", json={"step": "attention", "value": 12})
+    assert r.status_code == 200
+    view = r.json()
+    assert [m["kind"] for m in view["messages"]] == ["scenario", "prompt"]
+    assert view["input"]["step"] == "answer_1" and view["reset_transcript"] is False
+    assert get_store().checks_for(pid) == {"ac1": False}
+
+    for expected_block in range(2, 8):
+        view = run_block(client, token, view)
+        assert view["block_index"] == expected_block
+    assert view["block_index"] == 7
+    assert view["input"]["step"] == "attention" and "72" in view["messages"][-1]["text"]
+    r = client.post(f"/api/session/{token}/submit", json={"step": "attention", "value": 72})
+    assert r.json()["input"]["step"] == "answer_1"
+    assert get_store().checks_for(pid) == {"ac1": False, "ac2": True}
+
+    # Only the two configured blocks ask: 8 through 12 open on the Scenario.
+    view = r.json()
+    for _ in range(7, 13):
+        view = run_block(client, token, view)
+        if not view.get("done"):
+            assert view["input"]["step"] == "answer_1", view["block_index"]
+    assert view["done"]
+    # One failure is below the threshold: the ordinary completion code.
+    assert client.get(f"/finish?pid={pid}").headers["location"].endswith("cc=CCDONE")
+
+
+def test_failing_both_checks_returns_the_attention_code(client):
+    pid = "P1"
+    view = open_session(client, pid)
+    token = view["session"]
+    while not view.get("done"):
+        view = run_block(client, token, view, attention="fail")
+    assert get_store().checks_for(pid) == {"ac1": False, "ac2": False}
+    assert client.get(f"/finish?pid={pid}").headers["location"].endswith("cc=CCLOOK")
+    r = client.get("/admin/participants.csv?token=test-admin-token")
+    assert ",2,2," in r.text.splitlines()[1] or "2,2" in r.text  # seen, failed
+
+
+def test_attention_check_survives_resume(client):
+    pid = "P1"
+    view = open_session(client, pid)
+    token = view["session"]
+    view = run_block(client, token, view)
+    assert view["input"]["step"] == "attention"
+    from app import main
+    main.sessions.clear()
+    view = client.post("/api/session", json={"pid": pid}).json()
+    assert view["resumed"] and view["input"]["step"] == "attention"
+    assert "37" in view["messages"][-1]["text"]
 
 
 def test_finish_before_completion_explains(client):

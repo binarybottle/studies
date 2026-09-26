@@ -11,6 +11,7 @@ os.environ["MSM_FAKE_LLM_DELAY_S"] = "0"
 os.environ["ADMIN_TOKEN"] = "test-admin-token"
 os.environ["PROLIFIC_CC_COMPLETE"] = "CCDONE"
 os.environ["PROLIFIC_CC_NO_CONSENT"] = "CCNOPE"
+os.environ["PROLIFIC_CC_ATTENTION"] = "CCLOOK"
 
 from fastapi.testclient import TestClient  # noqa: E402
 

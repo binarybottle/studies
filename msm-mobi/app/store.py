@@ -125,6 +125,17 @@ CREATE TABLE IF NOT EXISTS blocks (
     PRIMARY KEY (participant_id, block_index)
 );
 
+CREATE TABLE IF NOT EXISTS attention_checks (
+    participant_id TEXT NOT NULL,
+    check_id       TEXT NOT NULL,
+    block_index    INTEGER,
+    expected       INTEGER NOT NULL,
+    given          INTEGER NOT NULL,
+    passed         INTEGER NOT NULL,
+    recorded_at    REAL NOT NULL,
+    PRIMARY KEY (participant_id, check_id)
+);
+
 CREATE TABLE IF NOT EXISTS events (
     event_id       INTEGER PRIMARY KEY AUTOINCREMENT,
     participant_id TEXT,
@@ -279,6 +290,37 @@ class Store:
             ).fetchall()
         return {r["stage"]: r["n"] for r in rows}
 
+    # --- attention checks ---
+
+    def record_check(self, pid: str, check_id: str, block_index: int, expected: int, given: int) -> bool:
+        """Record one instructed-response answer. Keyed per check so a
+        replayed submission cannot count twice. Returns whether it passed."""
+        passed = given == expected
+        with self._lock:
+            self._conn.execute(
+                """INSERT OR IGNORE INTO attention_checks
+                   (participant_id, check_id, block_index, expected, given, passed, recorded_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (pid, check_id, block_index, expected, given, int(passed), time.time()),
+            )
+            self._conn.commit()
+        return passed
+
+    def checks_for(self, pid: str) -> dict[str, bool]:
+        """check id -> passed, for every check the participant answered."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT check_id, passed FROM attention_checks WHERE participant_id = ?", (pid,)
+            ).fetchall()
+        return {r["check_id"]: bool(r["passed"]) for r in rows}
+
+    def failures_by_pid(self) -> dict[str, int]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT participant_id, SUM(1 - passed) AS failed FROM attention_checks GROUP BY participant_id"
+            ).fetchall()
+        return {r["participant_id"]: int(r["failed"]) for r in rows}
+
     # --- blocks ---
 
     def init_block(self, meta: dict[str, Any]) -> None:
@@ -352,6 +394,7 @@ class Store:
 
     PARTICIPANT_EXPORT_COLUMNS = (
         "pid", "study_id", "prolific_session_id", "stage", "assignment_index",
+        "attention_seen", "attention_failed",
         "app_version", "llm_model", "llm_provider",
         "created_at", "consented_at", "started_at", "completed_at",
     )
@@ -359,16 +402,26 @@ class Store:
     def export_participants_csv(self, out: Any) -> None:
         with self._lock:
             rows = list(self._conn.execute("SELECT * FROM participants ORDER BY created_at"))
+            checks = self._conn.execute(
+                "SELECT participant_id, COUNT(*) AS seen, SUM(1 - passed) AS failed "
+                "FROM attention_checks GROUP BY participant_id"
+            ).fetchall()
+        by_pid = {c["participant_id"]: c for c in checks}
         w = csv.DictWriter(out, fieldnames=list(self.PARTICIPANT_EXPORT_COLUMNS))
         w.writeheader()
         for r in rows:
-            w.writerow({c: r[c] for c in self.PARTICIPANT_EXPORT_COLUMNS})
+            c = by_pid.get(r["pid"])
+            row = {col: r[col] for col in self.PARTICIPANT_EXPORT_COLUMNS if col in r.keys()}
+            row["attention_seen"] = c["seen"] if c else 0
+            row["attention_failed"] = c["failed"] if c else 0
+            w.writerow(row)
 
     QUALITY_COLUMNS = (
         "pid", "stage", "blocks_completed", "total_minutes",
         "median_reply_words", "min_reply_words", "distinct_reply_ratio",
         "median_read_seconds", "min_read_seconds",
         "rating_sd", "unchanged_rating_share",
+        "attention_failed",
         "focus_lost_seconds", "paste_blocked", "prompt_version",
     )
 
@@ -387,6 +440,7 @@ class Store:
                                 scenario was not read
         rating_sd               spread of Answer Score 1 across blocks; 0 is
                                 straight-lining
+        attention_failed        instructed-response checks answered wrongly
         unchanged_rating_share  blocks where Answer Score 2 == Answer Score 1
         focus_lost_seconds      time the tab was hidden or unfocused
         paste_blocked           attempts to paste into a text box
@@ -407,6 +461,7 @@ class Store:
                 "WHERE event IN ('window_focus_regained', 'validation_blocked')"
             ))
 
+        failed = self.failures_by_pid()
         by_pid: dict[str, list[sqlite3.Row]] = {}
         for b in blocks:
             by_pid.setdefault(b["participant_id"], []).append(b)
@@ -448,6 +503,7 @@ class Store:
                 "min_read_seconds": round(min(reads), 1) if reads else None,
                 "rating_sd": round(statistics.pstdev(first), 1) if len(first) > 1 else None,
                 "unchanged_rating_share": round(sum(a == b for a, b in pairs) / len(pairs), 2) if pairs else None,
+                "attention_failed": failed.get(p["pid"], 0),
                 "focus_lost_seconds": round(focus.get(p["pid"], 0.0)),
                 "paste_blocked": pastes.get(p["pid"], 0),
                 "prompt_version": rows[0]["prompt_version"] if rows else None,

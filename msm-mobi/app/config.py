@@ -70,6 +70,22 @@ THINKING_SLOW_AFTER_MS = 7000
 """When the thinking indicator switches to its 'still thinking' text. A soft
 threshold, not a cutoff."""
 
+ATTENTION_CHECKS = {
+    # block index -> (check id, instruction, expected answer). Asked at the
+    # top of that block, before its Scenario. Block 1 follows the practice
+    # round, a few minutes in; block 7 is the halfway point of the twelve.
+    # Both are plain instructed responses in the same numeric box the
+    # participant has been using, so a failure means the instruction was
+    # not read, not that it was hard.
+    1: ("ac1", "A quick check that you are reading: for this box only, please enter the number 37.", 37),
+    7: ("ac2", "Another quick check that you are reading: for this box only, please enter the number 72.", 72),
+}
+
+ATTENTION_FAILURE_THRESHOLD = 2
+"""Failed checks needed before a finished session gets the attention code
+rather than the completion code. Both, never one: a single miss in an hour
+is not evidence of anything."""
+
 FIXATION_CROSS_MS = 500
 """Blank hold with a central cross before every block's Scenario. Kept from
 the lab protocol so the online and in-lab experiences match; it costs the
@@ -95,6 +111,11 @@ PROLIFIC_COMPLETE_URL = "https://app.prolific.com/submissions/complete?cc={code}
 # Never attach a rejection action to either.
 CC_COMPLETE = os.environ.get("PROLIFIC_CC_COMPLETE", "REPLACE_ME")
 CC_NO_CONSENT = os.environ.get("PROLIFIC_CC_NO_CONSENT", "REPLACE_ME_TOO")
+CC_ATTENTION = os.environ.get("PROLIFIC_CC_ATTENTION", "")
+"""Optional. A finished session that failed both attention checks returns
+with this code, so Prolific can hold it for review (attach "manually
+review", never a rejection). Unset, such sessions get CC_COMPLETE and the
+failures are only in the export."""
 
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
 """Guards the /admin exports. Empty disables them entirely."""

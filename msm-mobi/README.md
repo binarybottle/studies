@@ -129,12 +129,13 @@ paste a URL with a `pid` in it, and do not point Prolific at `/consent`:
 `/start` is the only route that registers a participant, and it is what
 sends a returning participant to the right place.
 
-Two completion codes, each needing the right action attached in Prolific.
-Neither should be a rejection:
+Three completion codes, each needing the right action attached in Prolific.
+None should be a rejection:
 
 | `.env` variable | Reached when | Prolific action |
 |---|---|---|
 | `PROLIFIC_CC_COMPLETE` | block 12's activation score was submitted | approve automatically |
+| `PROLIFIC_CC_ATTENTION` | finished, but both attention checks failed (optional; see below) | manually review |
 | `PROLIFIC_CC_NO_CONSENT` | the participant declined at the information sheet | custom screening, fixed reward |
 
 A participant who stops part-way gets **no code**: `/finish` tells them to
@@ -145,14 +146,32 @@ Set the Prolific study's estimated time from the pilot: the first three
 completed sessions took 33–60 minutes. The instruction text says as much
 (`DURATION_TEXT`); revise both together.
 
+### Attention checks
+
+Two instructed responses, in the same numeric box as every rating: "for
+this box only, please enter the number 37" at the top of block 1 (a few
+minutes in, right after the practice round) and "…72" at the top of block 7
+(halfway). They are defined in `ATTENTION_CHECKS` in `app/config.py`, never
+block progress, and are recorded per participant (`attention_seen`,
+`attention_failed` in `participants.csv`; `attention_failed` in
+`quality.csv`; an `attention_check` event with the answer).
+
+A finished session that failed **both** returns to Prolific with
+`PROLIFIC_CC_ATTENTION` when that is set, so the submission can be held for
+review; attach "manually review" to that code in Prolific, never a rejection.
+One failure never changes the code. With the variable unset, every finished
+session gets the completion code and the failures are only in the exports.
+The consent page tells participants the checks exist.
+
 ### Screening for low effort
 
-There are no attention checks; the design is flag afterwards, not block at
-entry. `quality.csv` gives one row per participant. Reasonable starting
-criteria, to be tuned on the first batches rather than applied blindly:
+Beyond the two checks, the design is flag afterwards, not block at entry.
+`quality.csv` gives one row per participant. Reasonable starting criteria,
+to be tuned on the first batches rather than applied blindly:
 
 | Column | Suspicious when | What it usually means |
 |---|---|---|
+| `attention_failed` | 2 | did not read either instruction; the strongest single signal |
 | `min_read_seconds` | under ~5 s | rated a scenario without reading it |
 | `distinct_reply_ratio` | under ~0.7 | the same sentence pasted into several boxes |
 | `median_reply_words` | 1–3 | "ok" / "yes" throughout |

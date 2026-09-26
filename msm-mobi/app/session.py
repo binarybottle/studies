@@ -22,12 +22,14 @@ from .content import BlockPlan, ParticipantPlan
 from .llm import PROMPT_VERSION, LLMClient, LLMResult, Turn
 
 StepName = Literal[
-    "scenario", "answer_1", "confidence_1", "text_1", "llm_1",
+    "attention", "scenario", "answer_1", "confidence_1", "text_1", "llm_1",
     "text_2", "llm_2", "text_3", "answer_2", "confidence_2",
     "activation", "gate", "done",
 ]
 
-# The order the participant moves through within every block, practice included.
+# The order the participant moves through within every block, practice
+# included. "attention" precedes "scenario" only in the blocks listed in
+# config.ATTENTION_CHECKS.
 STEP_ORDER: tuple[StepName, ...] = (
     "scenario", "answer_1", "confidence_1", "text_1", "llm_1",
     "text_2", "llm_2", "text_3", "answer_2", "confidence_2",
@@ -235,14 +237,23 @@ class Session:
 
     # --- rendering ---
 
-    def _opening_messages(self) -> list[Message]:
-        """The interstitial (if any) and the Scenario card that open a block."""
+    def _opening_messages(self, *, intro_only: bool = False, skip_intro: bool = False) -> list[Message]:
+        """The interstitial (if any) and the Scenario card that open a block.
+
+        A block with an attention check shows the interstitial with the check
+        (``intro_only``) and the Scenario afterwards without repeating it
+        (``skip_intro``). On resume, the check's answer is not replayed and the
+        interstitial comes back with the Scenario.
+        """
         block = self.block
         messages: list[Message] = []
-        if block.is_practice:
-            messages.append(Message(self._next_id(), "interstitial", prompts.PRACTICE_INTRO))
-        elif block.block_index == 1:
-            messages.append(Message(self._next_id(), "interstitial", prompts.FIRST_REAL_BLOCK_INTRO))
+        if not skip_intro:
+            if block.is_practice:
+                messages.append(Message(self._next_id(), "interstitial", prompts.PRACTICE_INTRO))
+            elif block.block_index == 1:
+                messages.append(Message(self._next_id(), "interstitial", prompts.FIRST_REAL_BLOCK_INTRO))
+        if intro_only:
+            return messages
         messages.append(
             Message(
                 self._next_id(),
@@ -255,14 +266,25 @@ class Session:
         )
         return messages
 
+    @property
+    def attention_check(self) -> tuple[str, str, int] | None:
+        """The check asked at the top of the current block, if any."""
+        return config.ATTENTION_CHECKS.get(self.block.block_index)
+
     def open_block(self) -> StepView:
-        """Render the Scenario and Question together, then ask for Answer Score 1."""
+        """Open a block: the attention check if this block has one, otherwise
+        the Scenario and Question together followed by Answer Score 1."""
+        if self._step == "attention":
+            messages = self._opening_messages(intro_only=True)
+            messages.append(Message(self._next_id(), "prompt", self.attention_check[1]))
+            return self._view(messages, self._input_spec(), reset_transcript=True)
         if self._step != "scenario":
             raise FlowError(f"open_block called while on step {self._step!r}")
-        messages = self._opening_messages()
+        after_check = self.attention_check is not None
+        messages = self._opening_messages(skip_intro=after_check)
         self._step = "answer_1"
         messages.append(Message(self._next_id(), "prompt", prompts.ANSWER_1))
-        return self._view(messages, self._input_spec(), reset_transcript=True)
+        return self._view(messages, self._input_spec(), reset_transcript=not after_check)
 
     def resume_view(self) -> StepView:
         """Rebuild the current block's transcript up to the present step.
@@ -274,8 +296,12 @@ class Session:
         """
         if self._step == "done":
             return self._view([], None, done=True)
-        if self._step == "scenario":
+        if self._step == "attention":
             return self.open_block()
+        if self._step == "scenario":
+            view = self.open_block()
+            view.reset_transcript = True
+            return view
 
         messages = self._opening_messages()
         for step in STEP_ORDER[1:]:
@@ -309,6 +335,10 @@ class Session:
     def _input_spec(self) -> InputSpec | None:
         step = self._step
         scenario = self.block.scenario
+        if step == "attention":
+            # The same numeric box as every rating, without scale anchors.
+            return InputSpec(step=step, field="attention", type="numeric",
+                             min=config.SCORE_MIN, max=config.SCORE_MAX)
         if step in NUMERIC_STEPS:
             if step in ("answer_1", "answer_2"):
                 low, high = scenario.scale_low_label, scenario.scale_high_label
@@ -358,7 +388,7 @@ class Session:
         if step != self._step:
             raise FlowError(f"Expected a submission for step {self._step!r}, got {step!r}")
 
-        if step in NUMERIC_STEPS:
+        if step in NUMERIC_STEPS or step == "attention":
             text = str(raw).strip()
             if not text:
                 raise ValidationError("Enter a number.")
@@ -394,6 +424,12 @@ class Session:
         value = self.validate(step, raw)
         stamp = now_iso()
         updates: dict[str, Any] = {}
+
+        if step == "attention":
+            # Recorded by the caller (it is not a block column); the block
+            # then opens as normal, whatever the answer was.
+            self._step = "scenario"
+            return value, updates, self.open_block()
 
         if step in NUMERIC_STEPS:
             column = STEP_FIELD[step]
@@ -439,7 +475,7 @@ class Session:
         self._block_pos += 1
         self._values = {}
         self._turns = []
-        self._step = "scenario"
+        self._step = "attention" if self.attention_check else "scenario"
         return self.open_block()
 
     # --- LLM turns ---

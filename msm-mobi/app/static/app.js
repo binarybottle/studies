@@ -373,8 +373,10 @@ function showInput(spec) {
   if (!spec) return;
 
   if (spec.type === 'numeric') {
-    els['numeric-low'].textContent = spec.scale_low;
-    els['numeric-high'].textContent = spec.scale_high;
+    els['numeric-low'].textContent = spec.scale_low || '';
+    els['numeric-high'].textContent = spec.scale_high || '';
+    // An instructed-response check has no scale, so no anchors row.
+    els['numeric-form'].querySelector('.scale-anchors').hidden = !(spec.scale_low || spec.scale_high);
     els['numeric-input'].value = '';
     els['numeric-input'].classList.remove('invalid');
     hide(els['numeric-error']);

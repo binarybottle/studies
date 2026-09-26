@@ -43,7 +43,7 @@ from .store import Participant, Stage, get_store
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("msm")
 
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.3.0"
 STATIC_DIR = Path(__file__).parent / "static"
 
 library: ContentLibrary | None = None
@@ -263,7 +263,8 @@ async def consent_form(pid: str | None = None) -> HTMLResponse:
         scenarios. For each one you will rate a statement about it on a scale
         from 0 to 100, say how confident you are, explain your rating in a
         sentence or two, exchange a few messages with an AI assistant about
-        your view, and then rate the statement again.</p>
+        your view, and then rate the statement again. Twice during the
+        session a short instruction checks that you are reading.</p>
         <p>The scenarios are imagined situations. Answer based on the scenario
         as described; you do not need to share anything personal, and please
         do not enter real personal information about yourself or anyone you
@@ -360,13 +361,23 @@ async def task_page(pid: str) -> HTMLResponse:
     return HTMLResponse(doc, headers=NO_STORE)
 
 
+def completion_code_for(pid: str) -> str:
+    """The completion code, or the attention code when one is configured and
+    the participant failed enough checks for Prolific to want a look."""
+    if config.CC_ATTENTION:
+        failed = sum(1 for passed in get_store().checks_for(pid).values() if not passed)
+        if failed >= config.ATTENTION_FAILURE_THRESHOLD:
+            return config.CC_ATTENTION
+    return config.CC_COMPLETE
+
+
 @app.get("/finish")
 async def finish(pid: str):
     """Return a finished participant to Prolific, or explain the alternative."""
     participant = require(pid)
     if participant.stage is Stage.COMPLETE:
         return RedirectResponse(
-            config.PROLIFIC_COMPLETE_URL.format(code=config.CC_COMPLETE), status_code=303
+            config.PROLIFIC_COMPLETE_URL.format(code=completion_code_for(pid)), status_code=303
         )
     if participant.stage is Stage.WITHDREW:
         return RedirectResponse(
@@ -530,6 +541,15 @@ async def submit(token: str, req: SubmitRequest) -> dict[str, Any]:
             # Usually a double submit or a stale tab; the client re-syncs.
             raise HTTPException(409, str(exc)) from exc
 
+        if req.step == "attention":
+            check_id, _, expected = config.ATTENTION_CHECKS[block_index_before]
+            passed = store.record_check(participant.pid, check_id, block_index_before, expected, int(value))
+            store.record_event(participant.pid, block_index_before, "attention_check",
+                               {"check": check_id, "passed": passed})
+            _open_current_block(session)
+            _persist(session)
+            return view.to_dict()
+
         if updates:
             store.update_block(participant.pid, block_index_before, updates)
         # The text itself is in the block row; the log keeps only its size.
@@ -538,8 +558,10 @@ async def submit(token: str, req: SubmitRequest) -> dict[str, Any]:
         store.record_event(participant.pid, block_index_before, "submission_recorded",
                            {"step": req.step, **logged})
 
-        # A gate advanced us into a new block: persist its metadata.
-        if req.step == "gate" and not view.done:
+        # A gate advanced us into a new block: persist its metadata. A block
+        # that opens on an attention check is recorded once the check is
+        # answered and the Scenario actually shows.
+        if req.step == "gate" and not view.done and session.step != "attention":
             _open_current_block(session)
         if view.done:
             _finish(session)
