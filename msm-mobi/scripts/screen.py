@@ -6,9 +6,13 @@ decision of whom to look at is a script rather than a spreadsheet. With the
 blocks export as well, it prints the flagged participants' own replies, which
 is what a rejection has to be justified from.
 
-    python scripts/screen.py ~/Desktop/msm-quality-2026-09-27.csv
-    python scripts/screen.py quality.csv --blocks blocks.csv --show
-    curl -s "https://msm-mobi.study.childmind.org/admin/quality.csv?token=$TOKEN" | python scripts/screen.py -
+    python3 scripts/screen.py ~/Desktop/msm-mobi/2026-09-27/quality.csv
+    python3 scripts/screen.py quality.csv --blocks blocks.csv --show
+    curl -s "https://msm-mobi.study.childmind.org/admin/quality.csv?token=$TOKEN" | python3 scripts/screen.py -
+
+On the droplet, straight from the database, with no download at all:
+
+    docker compose exec msm-mobi python scripts/screen.py --db /data/study.db --show
 
 Thresholds are flags with the README's defaults; tune them on the first
 batches. Nothing here is a verdict: a flag means "read this one", and the
@@ -93,8 +97,9 @@ def show_replies(pid: str, blocks: dict[str, list[dict[str, str]]]) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("quality", help="quality.csv, or - for stdin")
+    ap.add_argument("quality", nargs="?", help="quality.csv, or - for stdin (omit with --db)")
     ap.add_argument("--blocks", type=Path, help="blocks.csv, to print flagged participants' replies")
+    ap.add_argument("--db", type=Path, help="read straight from a study.db instead of exported CSVs")
     ap.add_argument("--show", action="store_true", help="print the replies of every flagged participant")
     ap.add_argument("--all", action="store_true", help="list every participant, not only flagged ones")
     ap.add_argument("--keep-test", action="store_true", help="include SIM-* and walkthrough-* IDs")
@@ -105,11 +110,30 @@ def main() -> int:
     ap.add_argument("--flag-on", type=int, default=2, help="strong signals needed to flag (default 2; both checks failed always flags)")
     args = ap.parse_args()
 
-    source = sys.stdin if args.quality == "-" else open(args.quality, newline="", encoding="utf-8")
-    rows = list(csv.DictReader(source))
+    if args.db:
+        # Same exports the admin endpoints serve, generated in memory.
+        import io
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from app.store import Store
+
+        store = Store(args.db)
+        quality_buf, blocks_buf = io.StringIO(), io.StringIO()
+        store.export_quality_csv(quality_buf)
+        store.export_blocks_csv(blocks_buf)
+        rows = list(csv.DictReader(io.StringIO(quality_buf.getvalue())))
+        blocks: dict[str, list[dict[str, str]]] = {}
+        for row in csv.DictReader(io.StringIO(blocks_buf.getvalue())):
+            blocks.setdefault(row["participant_id"], []).append(row)
+        for b in blocks.values():
+            b.sort(key=lambda r: int(r["block_index"] or 0))
+    else:
+        if not args.quality:
+            ap.error("give quality.csv (or -), or --db study.db")
+        source = sys.stdin if args.quality == "-" else open(args.quality, newline="", encoding="utf-8")
+        rows = list(csv.DictReader(source))
+        blocks = load_blocks(args.blocks) if args.blocks else {}
     if not args.keep_test:
         rows = [r for r in rows if not r["pid"].startswith(("SIM-", "walkthrough-"))]
-    blocks = load_blocks(args.blocks) if args.blocks else {}
 
     stages = Counter(r["stage"] for r in rows)
     print(f"{len(rows)} participants: " + ", ".join(f"{n} {s}" for s, n in sorted(stages.items())))

@@ -16,7 +16,7 @@ configuration template and this document. Hosting is described in the
 - [Configuration — `msm-mobi/.env`](#configuration--msm-mobienv)
 - [Running locally](#running-locally)
 - [Before opening the study](#before-opening-the-study)
-- [Exporting data](#exporting-data)
+- [Downloading and assessing the data](#downloading-and-assessing-the-data)
 - [Swapping in the real content](#swapping-in-the-real-content)
 - [Capacity](#capacity)
 - [Troubleshooting](#troubleshooting)
@@ -167,40 +167,11 @@ The consent page tells participants the checks exist.
 ### Screening for low effort
 
 Beyond the two checks, the design is flag afterwards, not block at entry.
-`quality.csv` gives one row per participant. Reasonable starting criteria,
-to be tuned on the first batches rather than applied blindly:
-
-| Column | Suspicious when | What it usually means |
-|---|---|---|
-| `attention_failed` | 2 | did not read either instruction; the strongest single signal |
-| `min_read_seconds` | under ~5 s | rated a scenario without reading it |
-| `distinct_reply_ratio` | under ~0.7 | the same sentence pasted into several boxes |
-| `median_reply_words` | 1–3 | "ok" / "yes" throughout |
-| `rating_sd` | 0 or near it | straight-lining the first rating |
-| `unchanged_rating_share` | 1.0 *and* short replies | never engaged; on its own it is a legitimate result |
-| `focus_lost_seconds` | many minutes | left the tab; not disqualifying by itself |
-| `paste_blocked` | > 0 | tried to paste replies in; read their text |
-
-`scripts/screen.py` applies exactly these criteria to the downloaded files
-and prints who to look at, why, and — with `--blocks … --show` — their
-replies, so the judgement is made from the transcript rather than the
-numbers:
-
-```bash
-python3 scripts/screen.py ~/Desktop/msm-quality-$(date +%F).csv \
-    --blocks ~/Desktop/msm-blocks-$(date +%F).csv --show
-```
-
-It flags a participant who failed both attention checks, or who trips two
-or more of the other criteria; `--all` lists everyone, and the thresholds
-are flags (`--help`). `SIM-*` and `walkthrough-*` IDs are skipped unless
-`--keep-test` is given. It runs on plain Python 3 with no dependencies, so
-it works on the laptop the exports were downloaded to. Flag on two or more
-of these together, then read the flagged transcripts before deciding. Under Prolific's rules a submission can be
-rejected only for demonstrable non-engagement, so keep the transcript that
-justifies it. Prolific-side filters (approval rate ≥ 98%, a minimum number
-of previous submissions, fluent English) remove most of this before it
-arrives.
+How to download the data and run that screening is in
+[Downloading and assessing the data](#downloading-and-assessing-the-data).
+Prolific-side filters (approval rate ≥ 98%, a minimum number of previous
+submissions, fluent English) remove most low-effort participants before
+they arrive.
 
 ## Configuration — `msm-mobi/.env`
 
@@ -275,38 +246,159 @@ to talk to the model.
 4. **Set the Prolific completion codes** in `.env` and the matching actions
    in Prolific.
 
-## Exporting data
+## Downloading and assessing the data
 
-Everything is in this study's database; nothing has to be joined against a
-vendor. From your laptop, on the allow-listed IP:
+Everything is in this study's own database on the droplet; nothing has to
+be joined against a vendor. The server exports it as CSV files behind an
+admin token and an IP allow-list, and a script screens those files for
+low-effort sessions. The routine after each batch is: download, screen,
+read the flagged transcripts, decide in Prolific.
+
+### 1. What the exports contain
+
+| File | Contents |
+|---|---|
+| `blocks.csv` | One row per block per participant: category, scenario, stance, every score, every text the participant typed, both model replies (as shown and as returned), latency, the answering model, `prompt_version`, timestamps. `is_practice` = 1 for the practice block. This is the analysis file. |
+| `participants.csv` | One row per Prolific submission: `stage` (`consented`, `in_task`, `complete`, `withdrew`), `assignment_index`, `attention_seen`, `attention_failed`, model, timestamps. |
+| `quality.csv` | One row per participant with the signals of a low-effort session, computed from the two files above and the event log. Columns are explained in step 3. |
+| `events/<pid>.jsonl` | The full event log for one participant: steps, model calls, focus loss, blocked pastes, rejected submissions. For investigating a report; not part of the routine. |
+
+### 2. Download
+
+**Requirements:** ssh access to the droplet, and an IP address on the
+`/admin/*` allow-list in the repository's `Caddyfile` (`curl ifconfig.me`
+tells you yours; a change there is a Caddy recreate, see the repository
+README). Both are needed because the export is the study's most sensitive
+artifact.
+
+From your laptop, in a checkout of this repository:
+
+```bash
+msm-mobi/scripts/download.sh
+```
+
+That reads the admin token from the running container, fetches the three
+CSVs into `~/Desktop/msm-mobi/<today's date>/`, checks that each one is a
+CSV rather than an error page, and prints the row counts. Give it a
+directory to put the dated folder somewhere else:
+
+```bash
+msm-mobi/scripts/download.sh ~/data/msm-mobi
+```
+
+The same by hand, if the script is not available:
 
 ```bash
 TOKEN=$(ssh arno@167.71.248.46 \
     'cd ~/studies && docker compose exec -T msm-mobi printenv ADMIN_TOKEN' \
     | /usr/bin/tr -d ' \t\r\n')
-curl -s "https://msm-mobi.study.childmind.org/admin/blocks.csv?token=$TOKEN" \
-    -o ~/Desktop/msm-blocks-$(date +%F).csv
-curl -s "https://msm-mobi.study.childmind.org/admin/participants.csv?token=$TOKEN" \
-    -o ~/Desktop/msm-participants-$(date +%F).csv
+for f in blocks participants quality; do
+  curl -s "https://msm-mobi.study.childmind.org/admin/$f.csv?token=$TOKEN" -o ~/Desktop/msm-$f.csv
+done
+head -1 ~/Desktop/msm-quality.csv      # must be a column header
 ```
 
-`head -1` each file: the first line should be a column header. `{"detail":"Not
-found"}` means a wrong or empty token **or** an IP that is not allow-listed
-in `Caddyfile`; the endpoint deliberately does not say which.
+`{"detail":"Not found"}` in a file means a wrong or empty token **or** an
+IP that is not on the allow-list; the endpoint deliberately does not say
+which. Check `${#TOKEN}` is about 32 first, then your IP against
+`Caddyfile`.
 
-| File | Contents |
-|---|---|
-| `blocks.csv` | One row per block per participant: category, scenario, stance, every score, every text, both model replies (as shown and as returned), latency, the answering model, timestamps. `is_practice` = 1 for the practice block. |
-| `participants.csv` | One row per Prolific submission: stage, `assignment_index`, model, timestamps. |
-| `quality.csv` | One row per participant with the signals of a low-effort session: reply length, reuse of the same text across blocks, seconds spent on each scenario before rating it, rating spread, tab-hidden time, paste attempts. See [Screening for low effort](#screening-for-low-effort). |
-| `events/<pid>.jsonl` | The full event log for one participant — steps, model calls, focus loss, blocked pastes, rejected submissions — for investigating a report. |
+One participant's event log, when a report needs investigating:
 
-Join to Prolific's own export on `pid` = `Participant id` for demographics
-and submission status. The assembled table is the most sensitive artifact the
-study produces; keep it off shared drives and out of the repository.
+```bash
+curl -s "https://msm-mobi.study.childmind.org/admin/events/<PROLIFIC_PID>.jsonl?token=$TOKEN"
+```
+
+### 3. Screen for low-effort sessions
+
+`quality.csv` carries these per-participant signals:
+
+| Column | Suspicious when | What it usually means |
+|---|---|---|
+| `attention_failed` | 2 | did not read either instruction; the strongest single signal |
+| `min_read_seconds` | under ~5 s | rated a scenario without reading it |
+| `distinct_reply_ratio` | under ~0.7 | the same sentence pasted into several boxes |
+| `median_reply_words` | 1–3 | "ok" / "yes" throughout |
+| `rating_sd` | 0 or near it | straight-lining the first rating |
+| `unchanged_rating_share` | 1.0 *and* short replies | never engaged; on its own it is a legitimate result |
+| `focus_lost_seconds` | many minutes | left the tab; not disqualifying by itself |
+| `paste_blocked` | > 0 | tried to paste replies in; read their text |
+
+`scripts/screen.py` applies those criteria and prints who to look at and
+why. It flags a participant who failed both attention checks, or who trips
+two or more of the other signals; anything weaker is listed as a note.
+Plain Python 3, no dependencies.
+
+**Locally, on the downloaded files** (the normal way). `--show` prints each
+flagged participant's own replies, block by block, which is what any
+decision has to rest on:
+
+```bash
+python3 msm-mobi/scripts/screen.py ~/Desktop/msm-mobi/2026-09-27/quality.csv \
+    --blocks ~/Desktop/msm-mobi/2026-09-27/blocks.csv --show
+```
+
+**Remotely, with nothing downloaded.** Either pipe the export from the
+server:
+
+```bash
+curl -s "https://msm-mobi.study.childmind.org/admin/quality.csv?token=$TOKEN" \
+    | python3 msm-mobi/scripts/screen.py -
+```
+
+or run it on the droplet straight from the database, transcripts included:
+
+```bash
+ssh arno@167.71.248.46
+cd ~/studies && docker compose exec msm-mobi python scripts/screen.py --db /data/study.db --show
+```
+
+Options: `--all` lists every participant with their signals, not only the
+flagged; `--keep-test` includes `SIM-*` and `walkthrough-*` IDs, which are
+skipped otherwise; the thresholds are flags (`--help`). Exit code 1 means
+something was flagged. Output looks like:
+
+```
+23 participants: 19 complete, 3 in_task, 1 withdrew
+
+FLAG 5f3a9c…                   complete   12 blocks   38.5 min
+      ! failed both attention checks
+      ! reused replies (distinct ratio 0.31)
+      · tab hidden 14 min
+    block  1  know_understand  aligning         rating  55 ->  55
+      you 1: I think this depends on the person...
+      ...
+
+1 flagged of 23. A flag means read the transcript, not reject.
+```
+
+### 4. Read, then decide
+
+A flag is a reason to read, not a verdict: a short reply can be a
+considered one, and a participant can fail one check in an hour without
+being inattentive. Read the printed replies. Under Prolific's rules a
+submission can be rejected only for demonstrable non-engagement, and the
+transcript is what justifies it; failing both attention checks is the
+clearest case. The thresholds above are starting points to tune on the
+first batches, not rules.
+
+Sessions that never finished (`stage` = `in_task` or `consented`) have no
+completion code and no submission to approve; Prolific times them out.
+Their data up to the point they stopped is in `blocks.csv`.
+
+### 5. Joining with Prolific
+
+Prolific's own export (the study → Data → export) joins to any of these
+files on `pid` = `Participant id` for demographics, submission status and
+Prolific's own time-taken. Verify that column name against the actual file
+before trusting a join. The assembled table is the most sensitive artifact
+the study produces; keep it off shared drives and out of the repository.
+
+### Backups
 
 The database itself (`/data/study.db` in the `msm_mobi_data` volume) is
-backed up nightly by `backup.sh` alongside DASH's.
+backed up nightly by `backup.sh` alongside DASH's. That is disaster
+recovery; the exports above are how data leaves the server.
 
 ## Swapping in the real content
 
