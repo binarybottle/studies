@@ -54,6 +54,7 @@ class BlockPlan:
     category_name: str
     scenario: Scenario
     stance: Stance
+    ends_with_question: bool = True   # whether the chatbot's replies end on a question
 
 
 @dataclass(frozen=True)
@@ -171,6 +172,10 @@ class ContentLibrary:
             blocks = self.assignment(assignment_index)
         if len(blocks) != config.REAL_BLOCK_COUNT:
             raise ContentError(f"{participant_id}: assignment has {len(blocks)} blocks, expected {config.REAL_BLOCK_COUNT}")
+        if any("question" not in b for b in blocks):
+            # Stored before the question flag existed; it is a pure function
+            # of the sequence number, so the same flags are reconstructed.
+            blocks = assign.add_question_flags(assignment_index, [dict(b) for b in blocks])
 
         resolved: list[BlockPlan] = [self.practice]
         for n, b in enumerate(blocks, start=1):
@@ -191,6 +196,7 @@ class ContentLibrary:
                     category_name=category_name,
                     scenario=scenario,
                     stance=stance,
+                    ends_with_question=bool(b["question"]),
                 )
             )
         return ParticipantPlan(participant_id=participant_id, assignment_index=assignment_index, blocks=tuple(resolved))

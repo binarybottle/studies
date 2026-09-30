@@ -58,9 +58,13 @@ MIN_FINAL_RESPONSE_WORDS = 1
 team wants a floor on the first replies only."""
 
 MAX_LLM_WORDS = 75
-"""Hard cap on each LLM Text Response. Each reply both responds and invites
-the next response in the same message, which is why it is above the spec's
-original 50."""
+"""Hard cap on each LLM Text Response. Enforced by having the model rewrite
+an over-long reply, never by cutting it; see llm.py."""
+
+MAX_REWRITES = int(os.environ.get("MSM_LLM_MAX_REWRITES", "5"))
+"""How many times a non-compliant reply (too long, or wrong about ending on
+a question) is sent back to the model for a complete rewrite before the best
+attempt is delivered anyway and flagged. Each round costs one model call."""
 
 SCORE_MIN = 0
 SCORE_MAX = 100

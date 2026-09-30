@@ -38,9 +38,9 @@ Each block, practice included:
 | 2 | Answer Score 1 (0–100) | `answer_score_1` |
 | 3 | Confidence Score 1 (0–100) | `confidence_score_1` |
 | 4 | "You rated that N out of 100. What made you give that score?" — any length, not empty | `user_text_1` |
-| 5 | LLM reply 1 (≤75 words; a closing question is optional) | `llm_text_1`, latency, model |
+| 5 | LLM reply 1 (≤75 words; ends on a question or not, per the block's flag) | `llm_text_1`, rewrites, latency, model |
 | 6 | Reply — any length, not empty | `user_text_2` |
-| 7 | LLM reply 2 (must engage what the participant added; no "moving on" cues) | `llm_text_2` |
+| 7 | LLM reply 2 (same flag; must engage what the participant added; no "moving on" cues) | `llm_text_2` |
 | 8 | Final reply — any length, not empty | `user_text_3` |
 | 9 | Answer Score 2 | `answer_score_2` |
 | 10 | Confidence Score 2 | `confidence_score_2` |
@@ -56,6 +56,17 @@ blocked at entry. Navigation is forward-only; the
 transcript is cleared at each block boundary so no earlier block can be
 re-read. Paste is blocked in the text fields.
 
+**Reply length and the question ending are enforced by a loop, not by
+cutting.** After every model call the code checks two things: at most 75
+words, and ends on a question exactly when the block's flag says so. A
+reply that misses either is handed back to the model with the problem named
+("your reply was 96 words; the limit is 75") and a request to rewrite it
+complete, summarizing rather than cutting; the code checks again and
+repeats. Each round is one more model call (~2.5 s). After `MAX_REWRITES`
+rounds (5) the shortest attempt is delivered as is and the row flags it
+(`llm_text_N_over_cap`). Every block row records the first draft, the
+number of rounds, and whether the delivered reply ended on a question.
+
 **Resume.** Every submission is persisted before the response returns, and
 the session's position is stored with it. A participant who refreshes, loses
 their connection, or comes back the next day is put back at the exact step
@@ -69,9 +80,9 @@ the same effect. There is no way to restart from the beginning.
 |---|---|
 | `app/main.py` | The Prolific pages (`/start`, `/consent`, `/task`, `/finish`), the task API, admin exports |
 | `app/session.py` | The per-block state machine; serializes itself for resume |
-| `app/assign.py` | Counterbalanced assignment (Williams square, rolling scenario window) |
+| `app/assign.py` | Counterbalanced assignment (Williams square, rolling scenario window, question-ending flags) |
 | `app/content.py` | Loads the content CSVs; resolves a participant's plan |
-| `app/llm.py` | Stance system prompts, block-local context, the 75-word cap, LiteLLM and fake providers |
+| `app/llm.py` | Stance system prompts, block-local context, the rewrite loop for length and question ending, LiteLLM and fake providers |
 | `app/store.py` | SQLite: `participants`, `blocks`, `attention_checks`, `events`; the CSV exports |
 | `app/prompts.py` | All participant-facing copy inside the task |
 | `app/config.py` | Protocol constants and environment-driven settings |
@@ -111,6 +122,14 @@ There is no assignment file. At consent the participant is issued the next
   used before any scenario repeats (every 8 participants). Which of the
   three lands on which stance is shuffled by a generator seeded with the
   sequence number.
+- **Question ending.** Each stance has four blocks (one per category); in
+  two of them the chatbot's replies end on a question and in two they do
+  not. Which two categories is chosen from the six possible pairs by the
+  sequence number, offset per stance, so over every six consecutive
+  participants each category is the question-ending one in each stance
+  equally often. The practice block always ends on a question. The flag is
+  `ends_with_question` on the block row; the observed outcome per turn is
+  `llm_text_N_elicited`.
 
 The resolved assignment is written to the participant row at consent, so a
 later edit to the bank cannot change what someone already saw. Withdrawn
@@ -228,16 +247,22 @@ to talk to the model.
 
 ## Before opening the study
 
-1. **Confirm the model path** from inside the container, both turns:
+1. **Confirm the model path** from inside the container, both turns and
+   both question flags:
 
    ```bash
    docker compose exec msm-mobi python scripts/check_llm.py --repeat 5
    docker compose exec msm-mobi python scripts/check_llm.py --turn 2 --repeat 5
+   docker compose exec msm-mobi python scripts/check_llm.py --question no --repeat 5
+   docker compose exec msm-mobi python scripts/check_llm.py --question no --turn 2 --repeat 5
    ```
 
-   Read the replies, and check that the latency spread sits clear of the 7 s
-   threshold at which the thinking indicator changes text. The output names
-   the `prompt_version` in force; that value is written to every block row.
+   Read the replies. Each line reports how many rewrite rounds it took and
+   whether the delivered reply ended on a question against what was wanted;
+   a rewrite adds ~2.5 s, so a model that needs one on most replies will
+   cross the 7 s threshold at which the thinking indicator changes text.
+   The output names the `prompt_version` in force; that value is written to
+   every block row.
 
 2. **Walk the participant path** yourself:
    `https://msm-mobi.study.childmind.org/start?PROLIFIC_PID=walkthrough-1`. Refresh
@@ -266,7 +291,7 @@ read the flagged transcripts, decide in Prolific.
 
 | File | Contents |
 |---|---|
-| `blocks.csv` | One row per block per participant: category, scenario, stance, every score, every text the participant typed, both model replies (as shown and as returned), latency, the answering model, `prompt_version`, timestamps. `is_practice` = 1 for the practice block. This is the analysis file. |
+| `blocks.csv` | One row per block per participant: category, scenario, stance, `ends_with_question` (the flag), every score, every text the participant typed, both model replies (as shown, and the first draft as `_raw`), rewrite rounds and `_over_cap`, `_elicited` (did it end on a question), latency, the answering model, `prompt_version`, timestamps. `is_practice` = 1 for the practice block. This is the analysis file. |
 | `participants.csv` | One row per Prolific submission: `stage` (`consented`, `in_task`, `complete`, `withdrew`), `assignment_index`, `attention_seen`, `attention_failed`, model, timestamps. |
 | `quality.csv` | One row per participant with the signals of a low-effort session, computed from the two files above and the event log. Columns are explained in step 3. |
 | `events/<pid>.jsonl` | The full event log for one participant: steps, model calls, focus loss, blocked pastes, rejected submissions. For investigating a report; not part of the routine. |
@@ -422,9 +447,10 @@ scenario_label, category_label, scenario_text, question_text, scale_low_label, s
 needs at least three scenarios; the app refuses to start otherwise. The
 stance prompts are `content/stance_key.csv` (currently the prototype's
 Aligning / Calibrated / Counterbalancing definitions; the invariant framing
-that controls length and form, and the per-turn guidance, are
-`RESPONSE_FRAMING` and `TURN_GUIDANCE` in `app/llm.py`). The practice block
-is `content/practice_scenario.csv`.
+that controls length and form, the question rule for each flag, the
+per-turn guidance and the rewrite request are `RESPONSE_FRAMING`,
+`QUESTION_RULES`, `TURN_GUIDANCE` and `REWRITE_INSTRUCTION` in
+`app/llm.py`). The practice block is `content/practice_scenario.csv`.
 
 **Bump `PROMPT_VERSION` in `app/llm.py` whenever any of those change.** It
 is recorded on every block row (`prompt_version` in `blocks.csv`) and in the

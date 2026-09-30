@@ -354,6 +354,126 @@ def test_client_events_are_allowlisted_and_trimmed(client):
     assert payload["reason"] == "blur" and "junk" not in payload
 
 
+# --- reply compliance loop ---
+
+class ScriptedProvider:
+    """Returns the given drafts in order, recording every call."""
+
+    name = "scripted"
+
+    def __init__(self, drafts):
+        self.drafts = list(drafts)
+        self.calls = []
+
+    async def complete(self, system, messages):
+        self.calls.append((system, messages))
+        return self.drafts.pop(0), "end_turn", {"input_tokens": 10, "output_tokens": 5}
+
+
+def _respond_with(provider, ends_with_question=True, turn=1):
+    import asyncio
+    from app import main
+    from app.llm import LLMClient, Turn
+    client = LLMClient("fake")
+    client._live = provider
+    block = main.library.practice
+    block = type(block)(**{**block.__dict__, "ends_with_question": ends_with_question})
+    return asyncio.run(client.respond(block, 50, 50, [Turn("user", WORDS)], turn_number=turn))
+
+
+def test_overlong_reply_is_rewritten_by_the_model_not_cut(client):
+    long = " ".join(["word"] * 90) + " and so is that what you think?"
+    short = "A compact version of the same point. Is that what you think?"
+    provider = ScriptedProvider([long, short])
+    result = _respond_with(provider)
+    assert result.text == short and result.raw_text == long
+    assert result.rewrites == 1 and result.over_cap is False
+    # The rewrite request carried the draft back with the problem named.
+    system, messages = provider.calls[1]
+    assert messages[-2] == {"role": "assistant", "content": long}
+    assert "limit is 75" in messages[-1]["content"] and "summarize rather than cut" in messages[-1]["content"]
+    assert result.usage["output_tokens"] == 10   # both rounds counted
+
+
+def test_question_flag_is_enforced_by_the_loop(client):
+    # Wanted no question; first draft asks one, second complies.
+    provider = ScriptedProvider(["Good point, is it though?", "Good point, and it holds."])
+    result = _respond_with(provider, ends_with_question=False)
+    assert result.text == "Good point, and it holds." and result.rewrites == 1 and result.elicited is False
+    assert "must not contain a question" in provider.calls[1][1][-1]["content"]
+
+    # Wanted a question; first draft has none.
+    provider = ScriptedProvider(["Good point.", "Good point, does it hold for you?"])
+    result = _respond_with(provider, ends_with_question=True)
+    assert result.elicited is True and result.rewrites == 1
+    assert "must end with one short question" in provider.calls[1][1][-1]["content"]
+
+
+def test_persistent_noncompliance_delivers_shortest_and_flags_it(client, monkeypatch):
+    from app import config as cfg
+    monkeypatch.setattr(cfg, "MAX_REWRITES", 2)
+    drafts = [" ".join(["w"] * 100) + "?", " ".join(["w"] * 90) + "?", " ".join(["w"] * 95) + "?"]
+    provider = ScriptedProvider(drafts)
+    result = _respond_with(provider)
+    assert len(provider.calls) == 3            # first draft + 2 rewrites, then stop
+    assert result.over_cap is True and result.rewrites == 2
+    assert result.text == drafts[1]            # the shortest attempt, uncut
+
+
+def test_system_prompt_states_the_question_rule(client):
+    from app import main
+    from app.llm import QUESTION_RULES, build_system_prompt
+    block = main.library.practice
+    assert QUESTION_RULES[True] in build_system_prompt(block, 1, True)
+    assert QUESTION_RULES[False] in build_system_prompt(block, 2, False)
+    assert "optional" not in build_system_prompt(block, 1, True).lower()
+
+
+def test_fake_provider_honours_the_flag_through_the_session(client):
+    """Each real block's replies end on a question exactly when its flag says."""
+    from app import main
+    pid = "P1"
+    view = open_session(client, pid)
+    token = view["session"]
+    view = run_block(client, token, view)     # practice
+    plan = main.library.resolve(pid, 0, get_store().get_participant(pid).assignment)
+    for b in plan.blocks[1:4]:
+        view = run_block(client, token, view)
+    rows = [dict(r) for r in get_store().block_rows(pid) if r["is_practice"] == "0" and r["llm_text_2"]]
+    assert rows
+    for r in rows:
+        want = r["ends_with_question"] == "1"
+        assert r["llm_text_1"].endswith("?") is want and r["llm_text_2"].endswith("?") is want, r["block_index"]
+        assert r["llm_text_1_rewrites"] == "0" and r["llm_text_1_over_cap"] == "0"
+
+
+# --- question-flag balance ---
+
+def test_question_flags_are_half_per_stance_and_balanced_across_participants(client):
+    from app import main
+    per_condition = Counter()   # (category, stance) -> times flagged question
+    for k in range(6):
+        blocks = main.library.assignment(k)
+        by_stance = {}
+        for b in blocks:
+            by_stance.setdefault(b["stance"], []).append(b["question"])
+            if b["question"]:
+                per_condition[(b["category"], b["stance"])] += 1
+        for stance, flags in by_stance.items():
+            assert sum(flags) == 2 and len(flags) == 4, (k, stance, flags)
+    # Over a cycle of six, every category is the question-ending one in each stance equally often.
+    assert set(per_condition.values()) == {3}, per_condition
+
+
+def test_question_flags_are_reconstructed_for_older_assignments(client):
+    from app import main
+    fresh = main.library.assignment(4)
+    stripped = [{k: v for k, v in b.items() if k != "question"} for b in fresh]
+    plan = main.library.resolve("old", 4, stripped)
+    assert [b.ends_with_question for b in plan.blocks[1:]] == [b["question"] for b in fresh]
+    assert plan.blocks[0].ends_with_question is True   # practice
+
+
 # --- counterbalancing ---
 
 def test_assignment_is_counterbalanced_across_twelve_participants(client):

@@ -43,7 +43,7 @@ from .store import Participant, Stage, get_store
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("msm")
 
-APP_VERSION = "0.3.0"
+APP_VERSION = "0.4.0"
 STATIC_DIR = Path(__file__).parent / "static"
 
 library: ContentLibrary | None = None
@@ -452,6 +452,7 @@ def _open_current_block(session: Session) -> None:
         "category": session.block.category_label,
         "scenario": session.block.scenario.label,
         "stance": session.block.stance.label,
+        "ends_with_question": session.block.ends_with_question,
     })
 
 
@@ -595,8 +596,9 @@ async def llm_turn(token: str) -> dict[str, Any]:
 
         store.update_block(participant.pid, block_index, updates)
         store.record_event(participant.pid, block_index, "llm_response_received", {
-            "latency_ms": result.latency_ms, "truncated": result.truncated,
-            "elicited": result.elicited, "model": result.model, "provider": result.provider,
+            "latency_ms": result.latency_ms, "rewrites": result.rewrites, "over_cap": result.over_cap,
+            "ends_with_question": result.ends_with_question, "elicited": result.elicited,
+            "model": result.model, "provider": result.provider,
             "word_count": len(result.text.split()),
         })
         _persist(session)

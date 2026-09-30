@@ -25,8 +25,8 @@ later edit to the bank cannot change what someone already saw.
 from __future__ import annotations
 
 import random
-from itertools import product
-from typing import Sequence
+from itertools import combinations, product
+from typing import Any, Sequence
 
 from . import config
 
@@ -90,15 +90,15 @@ def build_assignment(
 ) -> list[dict[str, str]]:
     """One participant's real blocks, in presentation order.
 
-    Returns ``[{"category": ..., "scenario": ..., "stance": ...}, ...]`` with
-    ``config.REAL_BLOCK_COUNT`` entries.
+    Returns ``[{"category": ..., "scenario": ..., "stance": ..., "question": bool}, ...]``
+    with ``config.REAL_BLOCK_COUNT`` entries.
     """
     order = condition_order(assignment_index, categories, stances)
     if len(order) != config.REAL_BLOCK_COUNT:
         raise ValueError(f"{len(categories)} categories x {len(stances)} stances != {config.REAL_BLOCK_COUNT} blocks")
     picks = scenario_picks(assignment_index, per_category, len(stances))
     cursor = {c: 0 for c in categories}
-    blocks: list[dict[str, str]] = []
+    blocks: list[dict[str, Any]] = []
     for category, stance in order:
         blocks.append({
             "category": category,
@@ -106,4 +106,29 @@ def build_assignment(
             "stance": stance,
         })
         cursor[category] += 1
+    add_question_flags(assignment_index, blocks)
+    return blocks
+
+
+def add_question_flags(assignment_index: int, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Mark, in place, which blocks' chatbot replies end on a question.
+
+    Within each stance, half of its blocks (two of four) do. Which two is
+    chosen from the possible pairs of categories by the sequence number,
+    offset per stance, so that over consecutive participants every
+    category is the question-ending one in each stance equally often and
+    the question manipulation is not confounded with category or stance.
+
+    A pure function of the sequence number and the block set, so it also
+    reconstructs the flags for an assignment stored before they existed.
+    """
+    by_stance: dict[str, list[dict[str, Any]]] = {}
+    for b in blocks:
+        by_stance.setdefault(b["stance"], []).append(b)
+    for s, (stance, members) in enumerate(sorted(by_stance.items())):
+        members = sorted(members, key=lambda b: b["category"])   # stable, independent of order
+        pairs = list(combinations(range(len(members)), len(members) // 2))
+        chosen = set(pairs[(assignment_index + s) % len(pairs)])
+        for i, b in enumerate(members):
+            b["question"] = i in chosen
     return blocks

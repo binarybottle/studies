@@ -499,7 +499,8 @@ class Session:
         updates = {
             f"llm_text_{which}": result.text,
             f"llm_text_{which}_raw": result.raw_text,
-            f"llm_text_{which}_truncated": result.truncated,
+            f"llm_text_{which}_rewrites": result.rewrites,
+            f"llm_text_{which}_over_cap": result.over_cap,
             f"llm_text_{which}_elicited": result.elicited,
             f"llm_text_{which}_requested_at": result.requested_at,
             f"llm_text_{which}_received_at": result.received_at,
@@ -532,5 +533,6 @@ class Session:
             "scale_high_label": block.scenario.scale_high_label,
             "stance_label": block.stance.label,
             "stance_name": block.stance.name,
+            "ends_with_question": block.ends_with_question,
             "prompt_version": PROMPT_VERSION,
         }

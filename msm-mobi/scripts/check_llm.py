@@ -10,6 +10,7 @@ version was used.
 
     python scripts/check_llm.py
     python scripts/check_llm.py --stance counterbalancing --turn 2 --repeat 5
+    python scripts/check_llm.py --question no --repeat 5
     python scripts/check_llm.py --model openai/gpt-5
 
 On the droplet:
@@ -35,13 +36,13 @@ async def run(args: argparse.Namespace) -> int:
     lib = ContentLibrary()
     block = lib.practice
     stance = lib.stances[args.stance]
-    block = type(block)(**{**block.__dict__, "stance": stance})
+    block = type(block)(**{**block.__dict__, "stance": stance, "ends_with_question": args.question == "yes"})
 
     print(f"provider={args.provider}  model={config.LLM_MODEL}  effort={config.LLM_EFFORT or '(unset)'}  "
           f"prompt_version={PROMPT_VERSION}")
     if config.LLM_API_BASE:
         print(f"api_base={config.LLM_API_BASE}")
-    print(f"stance={stance.name}  turn={args.turn}\n")
+    print(f"stance={stance.name}  turn={args.turn}  ends_with_question={block.ends_with_question}\n")
     print("--- system prompt ---")
     print(build_system_prompt(block, args.turn))
     print("\n--- replies ---")
@@ -58,7 +59,7 @@ async def run(args: argparse.Namespace) -> int:
         ]
 
     client = LLMClient(args.provider)
-    latencies, elicited = [], 0
+    latencies, compliant, rewrites = [], 0, 0
     for i in range(args.repeat):
         try:
             result = await client.respond(block, answer_score_1=70, confidence_score_1=55,
@@ -68,14 +69,19 @@ async def run(args: argparse.Namespace) -> int:
             print(f"FAILED: {str(exc).splitlines()[0][:300]}", file=sys.stderr)
             return 1
         latencies.append(result.latency_ms)
-        elicited += result.elicited
+        compliant += not result.over_cap
+        rewrites += result.rewrites
         print(f"[{i + 1}] {result.latency_ms} ms | {len(result.text.split())} words | "
-              f"truncated={result.truncated} | elicited={result.elicited} | model={result.model}")
+              f"rewrites={result.rewrites} | over_cap={result.over_cap} | "
+              f"ends_with_question={result.elicited} (wanted {result.ends_with_question}) | model={result.model}")
+        if result.rewrites:
+            print(f"    first draft ({len(result.raw_text.split())} words): {result.raw_text}")
         print(f"    {result.text}\n")
 
     if len(latencies) > 1:
         print(f"latency: min={min(latencies)}ms  max={max(latencies)}ms  mean={sum(latencies) // len(latencies)}ms")
-    print(f"{elicited} of {args.repeat} replies ended on a question (optional since prompt version 2).")
+    print(f"{compliant} of {args.repeat} replies complied (length and question rule); "
+          f"{rewrites} rewrite round{'s' if rewrites != 1 else ''} in total.")
     print(f"\nThinking indicator switches to 'still thinking' after {config.THINKING_SLOW_AFTER_MS} ms.")
     return 0
 
@@ -90,6 +96,8 @@ def main() -> int:
     ap.add_argument("--model", default=None, help=f"LiteLLM model id instead of {config.LLM_MODEL!r}")
     ap.add_argument("--repeat", type=int, default=1)
     ap.add_argument("--turn", type=int, default=1, choices=[1, 2])
+    ap.add_argument("--question", default="yes", choices=["yes", "no"],
+                    help="whether the reply must end on a question (the per-block flag)")
     args = ap.parse_args()
     if args.model:
         os.environ["MSM_LLM_MODEL"] = args.model
