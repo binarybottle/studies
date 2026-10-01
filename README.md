@@ -23,7 +23,7 @@ exist yet; Parts 2 and 3 use the real address.
 
 - [Part 1 — First-time setup](#part-1--first-time-setup): once per droplet.
 - [Part 2 — Rebuild and deploy](#part-2--rebuild-and-deploy): every code change.
-- [Part 3 — Operating](#part-3--operating): backups, logs, troubleshooting.
+- [Part 3 — Operating](#part-3--operating): backups, logs, access, troubleshooting.
 
 ---
 
@@ -422,6 +422,137 @@ Then walk `https://msm-mobi.study.childmind.org/start?PROLIFIC_PID=walkthrough-1
 end to end. The droplet was resized to 2 GB / 1 vCPU for the second study:
 LiteLLM alone is ~200 MB resident, on top of DASH and Caddy, and 1 GB was
 tight for both. Both apps are I/O-bound, so one vCPU is enough.
+
+## Access
+
+Decide what the person actually needs before granting anything, because the
+three levels differ enormously in what they expose:
+
+| They need to | Give them |
+|---|---|
+| Read a study's data | That study's `ADMIN_TOKEN` and their IP address in `Caddyfile` — no droplet account at all. See the study's own README. |
+| Deploy code | A user account, the `docker` group, and the shared checkout — below. |
+| Administer the host | Their own account plus `sudo`. Not covered here. |
+
+**What deploy access grants, unavoidably.** Membership of the `docker` group
+is root-equivalent: a member can mount any volume, so they can read every
+study's database and therefore all participant data, not only the study they
+came for. Compose also reads each study's `.env` as the invoking user, so
+they can read every API key, every `ADMIN_TOKEN`, and DASH's
+`PHONE_HASH_SALT`. There is no way to grant "may rebuild a container"
+without those two. It is a data-access decision before it is a technical
+one; check it against the protocol that governs the data.
+
+Note also that a DigitalOcean **team** invitation is a different thing
+entirely, and not what this section is about: it grants the control panel —
+snapshots, resizing, the console, destroying the droplet — but no shell, and
+it cannot be scoped to one project, because a DigitalOcean project is a
+folder rather than a permission boundary.
+
+### Granting deploy access
+
+Ask them for their SSH **public** key: one line from
+`cat ~/.ssh/id_ed25519.pub` on their own machine, or `ssh-keygen -t ed25519`
+if they have none. Then, as `arno` on the droplet:
+
+```bash
+# 1. Their account: key-only login, no password, no sudo.
+sudo adduser --disabled-password --gecos "" colleague
+sudo install -d -m 700 -o colleague -g colleague /home/colleague/.ssh
+sudo tee /home/colleague/.ssh/authorized_keys <<'KEY'
+ssh-ed25519 AAAAC3Nza... colleague@their-laptop
+KEY
+sudo chown colleague:colleague /home/colleague/.ssh/authorized_keys
+sudo chmod 600 /home/colleague/.ssh/authorized_keys
+
+# 2. Docker -- root-equivalent, as above.
+sudo usermod -aG docker colleague
+
+# 3. A group that shares the checkout, with both of you in it.
+sudo groupadd -f studies
+sudo usermod -aG studies arno
+sudo usermod -aG studies colleague
+
+# 4. Let the group reach the checkout and write to it.
+sudo chgrp studies /home/arno
+sudo chmod g+x /home/arno                    # traverse only, not list
+sudo chgrp -R studies /home/arno/studies
+sudo chmod -R g+rwX /home/arno/studies
+sudo find /home/arno/studies -type d -exec chmod g+s {} +
+git -C /home/arno/studies config core.sharedRepository group
+
+# 5. Compose reads .env as whoever invokes it, so the group needs to read it.
+sudo chmod 640 /home/arno/studies/*/.env
+
+# 6. This repository is public, so pull over HTTPS and no key is involved.
+git -C /home/arno/studies remote set-url origin https://github.com/binarybottle/studies.git
+```
+
+**Log out and back in afterwards.** Group membership applies to new sessions
+only, so your own `studies` membership is not active in the session that ran
+those commands, and `permission denied` until you reconnect means nothing is
+wrong.
+
+Four things worth knowing about that recipe:
+
+- **The checkout stays in `/home/arno`.** Moving it to `/srv/studies` would
+  be conventionally tidier, but it means updating the `backup.sh` crontab
+  entry, every path in these READMEs, and re-verifying that Compose still
+  derives the same volume names from the directory. Not worth it for a
+  second person.
+- **`chmod g+x` on `/home/arno` is traversal only.** They can reach a path
+  they know inside it but cannot list the directory, and `~/.ssh` stays
+  `700` regardless.
+- **The setgid bit** (`chmod g+s` on directories) is what makes files
+  created later inherit the `studies` group; without it the sharing decays
+  as soon as either of you adds a file.
+- **Re-check a `.env` after editing it.** `nano` edits in place and keeps
+  the mode, but an editor that writes a replacement file and renames it over
+  the original gives the new file your umask instead, which silently drops
+  the group's read access and breaks their next deploy.
+
+### What to send them
+
+> ```bash
+> ssh colleague@167.71.248.46
+>
+> # once, on your first login: git refuses a repository owned by another user
+> git config --global --add safe.directory /home/arno/studies
+>
+> # every deploy
+> cd /home/arno/studies
+> git pull
+> docker compose up -d --build msm-mobi    # name the service, always
+> docker compose ps                        # should reach "healthy" within ~40s
+> docker compose logs -f msm-mobi          # Ctrl-C stops following
+> ```
+>
+> **Always name the service.** A bare `docker compose up -d` also restarts
+> the other study on this droplet. And never `docker compose down -v`, which
+> deletes the data volumes.
+>
+> Participants mid-session survive a rebuild — they resume at the same step —
+> but would meet new wording from their next turn, so deploy between
+> recruitment batches rather than during one.
+
+That is the [deploy loop](#part-2--rebuild-and-deploy) above, with an
+absolute path in place of `~/studies` and one extra first-time line.
+`safe.directory` is needed because Git refuses to operate on a repository
+owned by a different user; it is a per-user setting, so each person does it
+once.
+
+### Revoking
+
+```bash
+sudo gpasswd -d colleague docker        # removes deploy ability
+sudo gpasswd -d colleague studies
+sudo deluser --remove-home colleague    # or remove the account entirely
+```
+
+Their next login fails, but they have had read access to every secret in
+every `.env`, so rotate `ADMIN_TOKEN` and the vendor API keys if the parting
+is not amicable. `PHONE_HASH_SALT` is the exception that cannot be rotated —
+see the warning in [dash/README.md](dash/README.md#configuration--dashenv).
 
 ## Troubleshooting
 
