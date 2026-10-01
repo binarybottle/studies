@@ -34,6 +34,7 @@ studies/
     compose.yml          Caddy + one service per study
     Caddyfile            TLS, routing, admin IP restriction
     backup.sh            Nightly SQLite backup of every study, 30-day retention
+    grant-access.sh      Give (or revoke) one person deploy access; see Access
     retell.md            Retell agents and flows: setup, publishing, secrets
     dash/                The DASH study. See dash/README.md.
         README.md        What the study is and how it is configured
@@ -453,73 +454,53 @@ folder rather than a permission boundary.
 
 Ask them for their SSH **public** key: one line from
 `cat ~/.ssh/id_ed25519.pub` on their own machine, or `ssh-keygen -t ed25519`
-if they have none. Then, as `arno` on the droplet:
+if they have none. Then, on the droplet:
 
 ```bash
-# 1. Their account: key-only login, no password, no sudo.
-sudo adduser --disabled-password --gecos "" colleague
-sudo install -d -m 700 -o colleague -g colleague /home/colleague/.ssh
-sudo tee /home/colleague/.ssh/authorized_keys <<'KEY'
-ssh-ed25519 AAAAC3Nza... colleague@their-laptop
-KEY
-sudo chown colleague:colleague /home/colleague/.ssh/authorized_keys
-sudo chmod 600 /home/colleague/.ssh/authorized_keys
-
-# 2. Docker -- root-equivalent, as above.
-sudo usermod -aG docker colleague
-
-# 3. A group that shares the checkout, with both of you in it.
-sudo groupadd -f studies
-sudo usermod -aG studies arno
-sudo usermod -aG studies colleague
-
-# 4. Let the group reach the checkout and write to it.
-sudo chgrp studies /home/arno
-sudo chmod g+x /home/arno                    # traverse only, not list
-sudo chgrp -R studies /home/arno/studies
-sudo chmod -R g+rwX /home/arno/studies
-sudo find /home/arno/studies -type d -exec chmod g+s {} +
-git -C /home/arno/studies config core.sharedRepository group
-
-# 5. Compose reads .env as whoever invokes it, so the group needs to read it.
-sudo chmod 640 /home/arno/studies/*/.env
-
-# 6. This repository is public, so pull over HTTPS and no key is involved.
-git -C /home/arno/studies remote set-url origin https://github.com/binarybottle/studies.git
+cd ~/studies && git pull
+sudo ./grant-access.sh dan 'ssh-ed25519 AAAAC3Nza... dan@example.org'
 ```
+
+Quote the key. `grant-access.sh` creates the account, grants the `docker`
+group and a share of this checkout, then **verifies the result by running the
+real commands as that person** — reach the checkout, write to it, fetch from
+GitHub, run `docker compose`, read each `.env` — and prints the exact
+instructions to send them. It is idempotent, so re-running it on someone who
+already has access changes nothing and just re-reports the checks. It
+validates the public key before touching anything, because a key pasted
+through a chat client arrives wrapped across lines more often than not.
 
 **Log out and back in afterwards.** Group membership applies to new sessions
 only, so your own `studies` membership is not active in the session that ran
-those commands, and `permission denied` until you reconnect means nothing is
-wrong.
+the script, and new files you create there will carry the wrong group until
+you reconnect.
 
-Four things worth knowing about that recipe:
+Four things worth knowing about what it does:
 
 - **The checkout stays in `/home/arno`.** Moving it to `/srv/studies` would
   be conventionally tidier, but it means updating the `backup.sh` crontab
   entry, every path in these READMEs, and re-verifying that Compose still
   derives the same volume names from the directory. Not worth it for a
-  second person.
-- **`chmod g+x` on `/home/arno` is traversal only.** They can reach a path
-  they know inside it but cannot list the directory, and `~/.ssh` stays
-  `700` regardless.
-- **The setgid bit** (`chmod g+s` on directories) is what makes files
-  created later inherit the `studies` group; without it the sharing decays
-  as soon as either of you adds a file.
+  second person. The script derives every path from its own location, so a
+  move would not need it edited.
+- **The owner's home becomes traversable, not listable** (`chmod g=x`): they
+  can reach a path they know inside it but cannot list the directory, and
+  `~/.ssh` stays `700` regardless.
+- **The setgid bit** on directories is what makes files created later
+  inherit the `studies` group; without it the sharing decays as soon as
+  either of you adds a file.
 - **Re-check a `.env` after editing it.** `nano` edits in place and keeps
   the mode, but an editor that writes a replacement file and renames it over
   the original gives the new file your umask instead, which silently drops
-  the group's read access and breaks their next deploy.
+  the group's read access and breaks their next deploy. Re-running
+  `grant-access.sh` repairs it.
 
-### What to send them
+### What they do
+
+The script prints this with the real values filled in:
 
 > ```bash
-> ssh colleague@167.71.248.46
->
-> # once, on your first login: git refuses a repository owned by another user
-> git config --global --add safe.directory /home/arno/studies
->
-> # every deploy
+> ssh dan@167.71.248.46
 > cd /home/arno/studies
 > git pull
 > docker compose up -d --build msm-mobi    # name the service, always
@@ -535,24 +516,26 @@ Four things worth knowing about that recipe:
 > but would meet new wording from their next turn, so deploy between
 > recruitment batches rather than during one.
 
-That is the [deploy loop](#part-2--rebuild-and-deploy) above, with an
-absolute path in place of `~/studies` and one extra first-time line.
-`safe.directory` is needed because Git refuses to operate on a repository
-owned by a different user; it is a per-user setting, so each person does it
-once.
+That is the [deploy loop](#part-2--rebuild-and-deploy) above with an absolute
+path in place of `~/studies`, and nothing else: the script sets Git's
+`safe.directory` system-wide, so no one has to configure anything on their
+first login.
 
 ### Revoking
 
 ```bash
-sudo gpasswd -d colleague docker        # removes deploy ability
-sudo gpasswd -d colleague studies
-sudo deluser --remove-home colleague    # or remove the account entirely
+sudo ./grant-access.sh --revoke dan
 ```
 
-Their next login fails, but they have had read access to every secret in
-every `.env`, so rotate `ADMIN_TOKEN` and the vendor API keys if the parting
-is not amicable. `PHONE_HASH_SALT` is the exception that cannot be rotated —
-see the warning in [dash/README.md](dash/README.md#configuration--dashenv).
+That removes them from the `docker` and `studies` groups, which is what
+actually ends deploy access, and leaves the account in place — it can do
+nothing without those groups. To remove the account and its home as well,
+the script prints the `deluser` command.
+
+Either way they have had read access to every secret in every `.env`, so
+rotate `ADMIN_TOKEN` and the vendor API keys if the parting is not amicable.
+`PHONE_HASH_SALT` is the exception that cannot be rotated — see the warning
+in [dash/README.md](dash/README.md#configuration--dashenv).
 
 ## Troubleshooting
 
