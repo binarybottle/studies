@@ -37,6 +37,8 @@ studies/
     backup.sh            Nightly SQLite backup of every study, 30-day retention
     capacity.sh          Each study's memory against its own cap, and the
                          droplet's headroom; run it during a live batch
+    motd.sh              Login banner: what is live, and what not to type;
+                         installed into /etc/update-motd.d, see Login banner
     grant-access.sh      Give (or revoke) one person deploy access to named
                          studies; see Access
     retell.md            Retell agents and flows: setup, publishing, secrets
@@ -202,6 +204,11 @@ participant path — for DASH, see
 ## 7. Install backups
 
 See [Backups](#backups) in Part 3. Do this before any study opens, not after.
+
+## 8. Install the login banner
+
+See [Login banner](#login-banner) in Part 3. Optional with one person on the
+box; worth it before anyone else gets deploy access.
 
 ---
 
@@ -393,6 +400,52 @@ docker compose start dash
 The volume is `studies_dash_data` (`studies_msm_mobi_data` for the other
 study) — Compose prefixes the volume name from `compose.yml` with the project
 directory name. Confirm with `docker volume ls` before typing it.
+
+## Login banner
+
+`motd.sh` prints what is live on this droplet and the two commands that can
+lose participant data. Every user sees it on every SSH login, which is the
+point: a hostname is glanced at, a banner is in the way.
+
+```bash
+sudo cp ~/studies/motd.sh /etc/update-motd.d/99-studies
+sudo chmod 755 /etc/update-motd.d/99-studies
+run-parts /etc/update-motd.d/        # preview it without logging out
+```
+
+Ubuntu runs everything in `/etc/update-motd.d/` in lexical order at login and
+prints the output. `99` puts this last — directly above the prompt, where it
+gets read, instead of scrolled off the top by the default header and the
+update notices.
+
+**Copy it; do not symlink it.** A symlink into the checkout would update
+itself on every `git pull`, which is tempting, but these scripts run as
+**root** at every login, and the checkout is group-writable by everyone with
+deploy access. Today that grants nothing new, since the `docker` group is
+already root-equivalent. It would become a real hole the moment you narrow
+someone below `docker` — exactly the change described in [Narrowing further
+than this script can](#narrowing-further-than-this-script-can). So re-copy it
+after editing:
+
+```bash
+sudo cp ~/studies/motd.sh /etc/update-motd.d/99-studies
+```
+
+The study list comes from Docker's own Compose labels, not from a list in the
+file, so it stays true as studies are added and retired and there is nothing
+to keep in sync. Stopped studies are shown too, labelled as still holding
+data — a retired study is the one most likely to be mistaken for a free
+hostname or a spare volume. If Docker cannot be read, it says so rather than
+printing an empty list, because "no studies" is the dangerous misreading.
+
+It runs before every prompt, so it stays to one `docker` call behind a
+`timeout` and never uses `set -e`: a banner must not be able to fail a login.
+
+DigitalOcean's images also print Ubuntu's advertising block. To quiet it:
+
+```bash
+sudo chmod -x /etc/update-motd.d/10-help-text /etc/update-motd.d/50-motd-news
+```
 
 ## Adding a study
 
