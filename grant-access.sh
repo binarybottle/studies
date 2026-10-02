@@ -4,6 +4,7 @@
 #   sudo ./grant-access.sh dan 'ssh-ed25519 AAAA... dan@example.org' msm-mobi
 #   sudo ./grant-access.sh dan 'ssh-ed25519 AAAA...' msm-mobi dash
 #   sudo ./grant-access.sh dan 'ssh-ed25519 AAAA...' all
+#   sudo ./grant-access.sh --studies dan msm-mobi dash   # re-scope, no key
 #   sudo ./grant-access.sh --revoke dan
 #
 # Creates the account from their public key, gives it the docker group and a
@@ -12,6 +13,9 @@
 # including checking that the studies you did NOT name stay unreadable.
 # Idempotent: re-running it changes nothing and just re-reports the checks,
 # and re-running with a different study list moves the .env modes to match.
+# --studies does only that part, for someone who already has access: their
+# account and key are untouched, so you do not have to go fishing their public
+# key back out of a 700 home directory to change which studies they can read.
 #
 # READ THIS BEFORE GRANTING. Deploy access is data access, and the study list
 # narrows only the accidental path, not the deliberate one. The docker group
@@ -85,9 +89,19 @@ fi
 
 # --- grant ----------------------------------------------------------------
 
-USER_NAME="${1:-}"
-PUBKEY="${2:-}"
-shift 2 2>/dev/null || true
+# --studies re-scopes an existing grant and takes no key.
+SCOPE_ONLY=""
+if [ "${1:-}" = "--studies" ]; then
+	SCOPE_ONLY=1
+	shift
+	USER_NAME="${1:-}"
+	PUBKEY="-"            # unused; the account already exists
+	shift 1 2>/dev/null || true
+else
+	USER_NAME="${1:-}"
+	PUBKEY="${2:-}"
+	shift 2 2>/dev/null || true
+fi
 
 # Every study directory, meaning every directory holding a Dockerfile. Derived
 # rather than listed so a new study needs no edit here.
@@ -99,12 +113,31 @@ done
 
 if [ -z "${USER_NAME}" ] || [ -z "${PUBKEY}" ] || [ "$#" -eq 0 ]; then
 	say "usage: sudo $0 USER 'ssh-ed25519 AAAA... comment' STUDY [STUDY...]"
+	say "       sudo $0 --studies USER STUDY [STUDY...]"
 	say "       sudo $0 --revoke USER"
 	say ""
 	say "Studies on this host: ${ALL_STUDIES[*]:-none found}"
 	say "Name only the ones they need, or 'all'. The list is required because"
 	say "which studies' secrets a person can read is a decision, not a default."
 	exit 1
+fi
+
+# --studies changes an existing grant, so refuse if there is none to change:
+# silently creating nothing, or half-granting an account with no groups, would
+# both be worse than saying so.
+if [ -n "${SCOPE_ONLY}" ]; then
+	if ! id -u "${USER_NAME}" >/dev/null 2>&1; then
+		say "No such user: ${USER_NAME}"
+		say "To grant access for the first time, pass their public key instead:"
+		say "    sudo $0 ${USER_NAME} 'ssh-ed25519 AAAA... comment' $*"
+		exit 1
+	fi
+	if ! id -nG "${USER_NAME}" | tr ' ' '\n' | grep -qx "${GROUP}"; then
+		say "${USER_NAME} exists but is not in the ${GROUP} group, so they have"
+		say "no access to re-scope. Grant it with their public key:"
+		say "    sudo $0 ${USER_NAME} 'ssh-ed25519 AAAA... comment' $*"
+		exit 1
+	fi
 fi
 
 # Requested studies, validated against what exists. A typo must not silently
@@ -145,25 +178,36 @@ granted() {
 # chat client or an editor arrives wrapped across lines or with the comment
 # mangled more often than not, and a half-written authorized_keys is a
 # confusing thing to debug later.
-KEYFILE="$(mktemp)"
-trap 'rm -f "${KEYFILE}"' EXIT
-printf '%s\n' "${PUBKEY}" > "${KEYFILE}"
-if ! FINGERPRINT="$(ssh-keygen -l -f "${KEYFILE}" 2>&1)"; then
-	say "That does not parse as an SSH public key, so nothing was changed:"
-	say "    ${FINGERPRINT}"
-	say ""
-	say "Expected one line, e.g. ssh-ed25519 AAAAC3Nza... name@host -- the"
-	say "contents of their ~/.ssh/id_ed25519.pub, quoted."
-	exit 1
+if [ -z "${SCOPE_ONLY}" ]; then
+	KEYFILE="$(mktemp)"
+	trap 'rm -f "${KEYFILE}"' EXIT
+	printf '%s\n' "${PUBKEY}" > "${KEYFILE}"
+	if ! FINGERPRINT="$(ssh-keygen -l -f "${KEYFILE}" 2>&1)"; then
+		say "That does not parse as an SSH public key, so nothing was changed:"
+		say "    ${FINGERPRINT}"
+		say ""
+		say "Expected one line, e.g. ssh-ed25519 AAAAC3Nza... name@host -- the"
+		say "contents of their ~/.ssh/id_ed25519.pub, quoted."
+		exit 1
+	fi
+else
+	FINGERPRINT="unchanged (--studies does not touch the key)"
 fi
 
 OWNER="$(stat -c %U "${STACK_DIR}")"
 OWNER_HOME="$(getent passwd "${OWNER}" | cut -d: -f6)"
 
-say "Granting deploy access to ${USER_NAME}"
-say "  key        ${FINGERPRINT}"
+if [ -n "${SCOPE_ONLY}" ]; then
+	say "Re-scoping ${USER_NAME} to: ${STUDIES[*]}"
+	say "  was        $(tr '\n' ' ' < "${STACK_DIR}/.access/${USER_NAME}" 2>/dev/null || echo 'no record on file')"
+else
+	say "Granting deploy access to ${USER_NAME}"
+	say "  key        ${FINGERPRINT}"
+fi
 say "  checkout   ${STACK_DIR} (owned by ${OWNER})"
 say "  studies    ${STUDIES[*]}"
+
+if [ -z "${SCOPE_ONLY}" ]; then
 
 step "Account"
 if id -u "${USER_NAME}" >/dev/null 2>&1; then
@@ -207,6 +251,10 @@ chmod -R g+rwX "${STACK_DIR}"
 find "${STACK_DIR}" -type d -exec chmod g+s {} +
 ok "${STACK_DIR} is group-writable, with setgid on directories"
 
+fi   # end of what --studies skips: key, account, groups, checkout
+
+step "Studies"
+
 # Compose needs to read the .env of a study they deploy, so those go to 640.
 # The rest are forced back to 600 on every run, so re-running with a shorter
 # study list actually takes access away instead of only adding it.
@@ -222,6 +270,9 @@ for env_file in "${STACK_DIR}"/*/.env; do
 		ok "${study}/.env left at 600 (not granted)"
 	fi
 done
+
+# Git needs no reconfiguring to change someone's study list.
+if [ -z "${SCOPE_ONLY}" ]; then
 
 step "Git"
 git -C "${STACK_DIR}" config core.sharedRepository group
@@ -241,6 +292,8 @@ git config --system --add safe.directory "${STACK_DIR}" 2>/dev/null || true
 git config --system --get-all safe.directory | grep -qxF "${STACK_DIR}" \
 	&& ok "safe.directory set system-wide (no per-user setup needed)" \
 	|| bad "could not set safe.directory system-wide"
+
+fi   # end of the Git step
 
 step "Record"
 # Who has access to what is otherwise only inferable from /etc/group plus the
@@ -297,6 +350,19 @@ if [ "${FAILED}" -ne 0 ]; then
 	exit 1
 fi
 
+# A re-scope needs no handover text: they already have the access and the
+# instructions. Say what changed and stop.
+if [ -n "${SCOPE_ONLY}" ]; then
+	step "All checks passed. ${USER_NAME} can now read: ${STUDIES[*]}"
+	say ""
+	say "Their account, key and groups were not touched, so nothing has to be"
+	say "sent to them. A study removed here takes effect immediately; one added"
+	say "is readable from their next command."
+	exit 0
+fi
+
+# Pad the comments to a fixed column, since the service name is interpolated
+# and a ragged block is the kind of thing people assume they mis-pasted.
 step "All checks passed. Send ${USER_NAME} this:"
 cat <<REPORT
 
@@ -304,8 +370,8 @@ cat <<REPORT
     cd ${STACK_DIR}
     git pull
     docker compose up -d --build ${STUDIES[0]}
-    docker compose ps                        # should reach "healthy" in ~40s
-    docker compose logs -f ${STUDIES[0]}     # Ctrl-C stops following
+$(printf '    %-40s %s\n' "docker compose ps" '# should reach "healthy" in ~40s')
+$(printf '    %-40s %s\n' "docker compose logs -f ${STUDIES[0]}" '# Ctrl-C stops following')
 
   Yours: ${STUDIES[*]}
   Also on this host: $(cd "${STACK_DIR}" && docker compose config --services 2>/dev/null | tr '\n' ' ')

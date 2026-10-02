@@ -699,18 +699,24 @@ send them. It validates the public key before touching anything, because a
 key pasted through a chat client arrives wrapped across lines more often than
 not.
 
-It is idempotent, and re-running it with a **different** list moves the modes
-to match, in both directions:
+It is idempotent. To change someone's scope later, use `--studies`, which
+takes no key because the account already exists:
 
 ```bash
-sudo ./grant-access.sh dan 'ssh-ed25519 AAAA...' msm-mobi dash   # widen
-sudo ./grant-access.sh dan 'ssh-ed25519 AAAA...' msm-mobi        # narrow again
+sudo ./grant-access.sh --studies dan msm-mobi dash   # widen
+sudo ./grant-access.sh --studies dan msm-mobi        # narrow again
 ```
 
-That matters because the script's recursive `chmod g+rwX` over the checkout
-loosens every `.env` on the way past; the per-study pass runs afterwards and
-puts the ungranted ones back to `600`. Re-running is the supported way to
-change someone's scope — there is no separate subcommand.
+That form touches only the `.env` modes and the record — not the account, the
+key, the groups, the checkout, or Git — and then runs the same verification.
+It refuses if the person does not exist or is not in the `studies` group,
+rather than half-creating an account, and tells you the full form to use
+instead. A removed study takes effect immediately; an added one is readable
+from their next command, with nothing to send them.
+
+Without `--studies` you would have to re-supply their public key to change one
+word, which means reading it back out of their `700` home directory as root —
+a silly thing to need, and the reason this form exists.
 
 Each grant is recorded in `.access/<user>` (git-ignored) so that "who can read
 what" is answerable later without reading file modes, and so `--revoke` can
