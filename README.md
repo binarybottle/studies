@@ -352,7 +352,6 @@ This is disaster recovery, not data export — for a CSV you can analyse, see
 [Exporting data](dash/README.md#exporting-data).
 
 ```bash
-chmod +x ~/studies/backup.sh
 ~/studies/backup.sh          # run once manually — an untested backup is not a backup
 crontab -e
 ```
@@ -360,6 +359,13 @@ crontab -e
 ```
 0 3 * * * /home/arno/studies/backup.sh >> /home/arno/studies/backup.log 2>&1
 ```
+
+`backup.sh` and `capacity.sh` are committed executable, so a `git pull` keeps
+them runnable. That matters more than it sounds: cron invokes `backup.sh` by
+path, so if the executable bit is ever lost the nightly backup fails silently
+except for a line in `backup.log`. If you add a script here, commit it with
+`git update-index --chmod=+x` rather than relying on a local `chmod`, which a
+pull that rebases will undo.
 
 Uses SQLite's backup API rather than `cp`, since the database runs in WAL mode
 and a plain copy taken mid-write can be unrestorable. Verifies the copy opens
