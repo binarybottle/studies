@@ -1,7 +1,8 @@
 # Study hosting stack: Caddy terminating TLS in front of one container per study.
 #
-# Adding a second study means adding a service block here and a site block in
-# Caddyfile. Nothing else changes, and studies stay isolated from each other.
+# Adding a study means adding a service block here, a network for it below, and
+# a site block in Caddyfile. Nothing else changes, and studies stay isolated
+# from each other.
 #
 #   docker compose up -d          # start everything
 #   docker compose logs -f dash   # follow one study's logs
@@ -10,6 +11,22 @@
 # Each study's data volume holds its study.db. They are deliberately named
 # volumes rather than bind mounts so that `docker compose down` cannot remove
 # them by accident, and they are what the backup cron job archives.
+#
+# Studies are kept apart in three ways: a container each, a volume each, and a
+# network each. The networks matter because Compose's default is a single
+# bridge on which every container can reach every other by name, which would
+# let one study's app open a socket to another study's port and bypass the
+# Caddyfile's IP restriction on /admin/* entirely -- that restriction lives at
+# the edge, and such a request never reaches the edge. Caddy joins every
+# study's network because it is the one thing that must reach them all.
+#
+# mem_limit is a circuit breaker, not a budget: it decides which container the
+# kernel kills when something runs away, instead of letting it score by size
+# and take a bystander study down. memswap_limit pins it to the same value so
+# a container at its ceiling dies instead of swapping, because swapping on one
+# vCPU starves every other study through disk contention. Build-time memory is
+# not affected by either, so the swapfile still covers `pip install`. See
+# Isolation between studies in README.md before changing the numbers.
 
 services:
   caddy:
@@ -22,6 +39,12 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data      # certificates; losing this re-requests them
       - caddy_config:/config
+    # On every study's network: Caddy is the sole public route into each one.
+    networks:
+      - dash_net
+      - msm_mobi_net
+    mem_limit: 96m
+    memswap_limit: 96m
     depends_on:
       - dash
       - msm-mobi
@@ -36,7 +59,12 @@ services:
     volumes:
       - dash_data:/data
     # No ports section: the app is reachable only through Caddy, never
-    # directly on a public port.
+    # directly on a public port. And one network, so no other study's
+    # container can reach this one either.
+    networks:
+      - dash_net
+    mem_limit: 384m
+    memswap_limit: 384m
     expose:
       - "8000"
     healthcheck:
@@ -61,6 +89,11 @@ services:
       STUDY_DB_PATH: /data/study.db
     volumes:
       - msm_mobi_data:/data
+    networks:
+      - msm_mobi_net
+    # The largest of the three: LiteLLM alone is ~200 MB resident.
+    mem_limit: 768m
+    memswap_limit: 768m
     expose:
       - "8000"
     healthcheck:
@@ -72,6 +105,12 @@ services:
       retries: 3
       # LiteLLM takes ~10 s to import on this droplet before the app can answer.
       start_period: 40s
+
+# One per study, each holding that study's app and nothing else. A new study
+# adds a network here and names it in its own service block and in Caddy's.
+networks:
+  dash_net:
+  msm_mobi_net:
 
 volumes:
   caddy_data:

@@ -12,3 +12,5 @@ study.db-shm
 # Local runs of a study write here; the droplet uses a volume instead.
 */data/
 .venv/
+# Who has deploy access to which studies; written by grant-access.sh.
+.access/

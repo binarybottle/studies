@@ -23,7 +23,8 @@ exist yet; Parts 2 and 3 use the real address.
 
 - [Part 1 — First-time setup](#part-1--first-time-setup): once per droplet.
 - [Part 2 — Rebuild and deploy](#part-2--rebuild-and-deploy): every code change.
-- [Part 3 — Operating](#part-3--operating): backups, logs, access, troubleshooting.
+- [Part 3 — Operating](#part-3--operating): backups, logs, isolation, access,
+  troubleshooting.
 
 ---
 
@@ -34,7 +35,10 @@ studies/
     compose.yml          Caddy + one service per study
     Caddyfile            TLS, routing, admin IP restriction
     backup.sh            Nightly SQLite backup of every study, 30-day retention
-    grant-access.sh      Give (or revoke) one person deploy access; see Access
+    capacity.sh          Each study's memory against its own cap, and the
+                         droplet's headroom; run it during a live batch
+    grant-access.sh      Give (or revoke) one person deploy access to named
+                         studies; see Access
     retell.md            Retell agents and flows: setup, publishing, secrets
     dash/                The DASH study. See dash/README.md.
         README.md        What the study is and how it is configured
@@ -332,6 +336,7 @@ Run these on the droplet, from `~/studies`.
 | Stage counts | `docker compose exec dash python -c "import store; store.init_db(); print(store.summary())"` |
 | Export participant data | see [dash/README.md](dash/README.md#exporting-data) |
 | Disk / memory | `df -h && free -h` |
+| Memory per study, against its cap | `./capacity.sh` |
 | Stop everything | `docker compose down` |
 
 **Never run `docker compose down -v`.** The `-v` flag deletes named volumes,
@@ -391,14 +396,20 @@ directory name. Confirm with `docker volume ls` before typing it.
    Either way the new study's documentation and consent text start from
    wording that already passed review, and are edited rather than written.
 2. Add a service block in `compose.yml` pointing at it, with its own volume,
-   and add it to Caddy's `depends_on`.
+   its own network, and a `mem_limit` (start generous, then set it from
+   `./capacity.sh` during the first real batch); add the network to Caddy's
+   `networks` and the service to Caddy's `depends_on`.
 3. Add a site block in `Caddyfile` for the new hostname.
 4. Add the service name to `SERVICES` in `backup.sh`.
 5. Add the DNS A record.
 6. Create the study's `.env` on the droplet, then `docker compose up -d`.
 
 Studies stay isolated: separate containers, separate volumes, separate
-databases.
+databases, separate networks. See [Isolation between
+studies](#isolation-between-studies) for what that does and does not
+guarantee, and [Retiring a study](#retiring-a-study) for the other end of the
+lifecycle — the droplet fills up with finished studies left running, not with
+new ones.
 
 ### Bringing up msm-mobi the first time
 
@@ -424,6 +435,196 @@ end to end. The droplet was resized to 2 GB / 1 vCPU for the second study:
 LiteLLM alone is ~200 MB resident, on top of DASH and Caddy, and 1 GB was
 tight for both. Both apps are I/O-bound, so one vCPU is enough.
 
+## Isolation between studies
+
+Each study gets its own container, its own named volume, its own SQLite
+database, its own `.env`, its own `ADMIN_TOKEN`, its own Docker network, and
+its own memory ceiling. Two of those are worth explaining, because what they
+protect against is narrower than it looks.
+
+### A network per study
+
+Compose's default is a single bridge network on which every container
+resolves and reaches every other by name. On that default, the `msm-mobi`
+container can open a socket to `dash:8000` — and the `Caddyfile`'s IP
+restriction on `/admin/*` does nothing about it, because that rule lives at
+the edge and such a request never reaches the edge.
+
+`compose.yml` therefore declares one network per study and joins Caddy to all
+of them, since Caddy is the one thing that must reach everything.
+
+**Be clear about what this buys.** The export that matters, DASH's
+`/admin/linkage.csv`, needs DASH's `ADMIN_TOKEN`, which lives in a different
+container's environment — so it was never reachable this way. The rest of
+each study's surface is public endpoints that anything on the internet can
+already reach. The one real gain is that a compromised study can no longer
+forge `X-Forwarded-For` against its neighbour to evade the per-address rate
+limit on DASH's opt-in endpoint.
+
+The reason to keep it is not that it closes a live hole. It is that "a
+study's port is reachable only by Caddy" becomes a property of the
+configuration rather than a coincidence, and the `--forwarded-allow-ips *` in
+each `Dockerfile` is justified by a premise that is now actually true. A
+third study added by someone else inherits the segmentation instead of
+inheriting a flat network.
+
+It protects against nothing a person with `docker` group access does; see
+[Access](#access).
+
+### A memory ceiling per study
+
+`mem_limit` on each service, with `memswap_limit` pinned to the same value.
+Currently 768 MB for `msm-mobi` (LiteLLM alone is ~200 MB resident), 384 MB
+for `dash`, 96 MB for Caddy.
+
+These are circuit breakers, not budgets. Without them the kernel's OOM killer
+scores by size and may kill a bystander study; today it would most likely
+pick `msm-mobi` as the largest process, which protects DASH by luck rather
+than by rule, and would not protect `msm-mobi` from a leak in DASH. With
+them, a runaway container is the one that dies.
+
+**A limit is a ceiling, not a reservation.** Docker sets nothing aside: a
+container capped at 768 MB that is using 250 MB is using 250 MB, and the other
+1.7 GB is available to everything else. Nothing is lost by setting a limit
+generously, and the limits are *expected* to sum to more than the droplet has.
+That is what makes this scale — see
+[Sizing them as studies come and go](#sizing-them-as-studies-come-and-go).
+
+`memswap_limit` matters because Docker otherwise allows a container twice its
+`mem_limit` in swap, and this droplet has a 2 GB swapfile for builds. A
+container that swapped instead of dying would keep running at disk speed on
+one vCPU and drag every other study down with it, which is worse than the
+clean kill. Build-time memory is unaffected by either setting, so [Swap](#swap)
+still does its job for `pip install`.
+
+The cost is that hitting a limit is a `SIGKILL` and a restart, not
+backpressure: participants resume at the same step, but a model turn in
+flight is lost. So set these generously, and check them against reality with
+`./capacity.sh` during a live batch.
+
+### Sizing them as studies come and go
+
+Do not divide the droplet's memory among the studies. Because a limit is a
+ceiling and not a reservation, a study's cap is a property of **that study**
+and nothing else:
+
+> **cap ≈ 3× the study's own measured peak, rounded up.**
+
+Set it from one observation of that study under load and leave it alone.
+Adding a fourth study does not require re-deriving the other three, and
+retiring one does not free a number that someone has to redistribute. That is
+the whole reason this scales: there is no shared budget to rebalance, and no
+arithmetic that goes stale when the roster changes.
+
+The caps will sum to more than the droplet has. That is correct and not worth
+computing. Two separate numbers matter, and `./capacity.sh` prints both:
+
+```bash
+./capacity.sh            # during a live batch -- idle numbers mean nothing
+./capacity.sh --watch    # every 10s
+```
+
+- **Each study against its own cap.** Answers "is this cap still right". Above
+  ~50% during a real batch, raise it. This is per study and independent of the
+  others.
+- **`available` on the host.** Answers "can this droplet take another study".
+  This is the only number that is actually shared, and it is a capacity
+  question, not a limits question — limits cannot create memory. When
+  `available` runs low the answer is a bigger droplet or a retired study, not
+  smaller caps.
+
+The script derives its service list from `docker compose config --services`,
+so a study added or retired needs no edit to it. It exits non-zero when
+something wants attention, including a service with no `mem_limit` at all and
+one whose `memswap_limit` does not match — both are easy to forget when
+copying a service block for a new study.
+
+Swap in use is called out separately: containers are pinned so they cannot
+swap, so swap activity means the host itself, usually a build. Investigate
+that before adding a study rather than after.
+
+### Retiring a study
+
+Studies end at different times, and a finished study left running is the way
+this droplet fills up — five idle studies holding a few hundred MB each, with
+nobody recruiting. Memory is reclaimed by **stopping the container**, which
+costs nothing and keeps everything:
+
+```bash
+./backup.sh                          # before touching a finished study
+docker compose stop msm-mobi         # frees all of its memory
+```
+
+The volume, the database, and the image all survive. `restart:
+unless-stopped` is what makes this stick across a droplet reboot — a stopped
+container stays stopped, which is exactly what a finished study should do.
+`./capacity.sh` then reports it as `stopped (no memory held)`.
+
+To read the data again, start it, export, stop it again:
+
+```bash
+docker compose start msm-mobi
+docker compose exec msm-mobi python scripts/screen.py --db /data/study.db --show
+docker compose stop msm-mobi
+```
+
+**One trap.** Caddy's `depends_on` lists every study, and `docker compose up
+-d caddy` starts a service's dependencies — so recreating Caddy after a
+`Caddyfile` edit silently restarts every study you had stopped. Use
+`--no-deps` once a study is retired:
+
+```bash
+docker compose up -d --force-recreate --no-deps caddy
+```
+
+Or remove the retired study from `depends_on`, which is tidier and worth doing
+at the point the study is finished for good. While its container is stopped,
+its hostname answers `502`; if the study is public and people may still visit,
+replace the site block's `reverse_proxy` with a `respond` serving a short
+closed-study notice, which also stops Let's Encrypt renewing a certificate for
+a backend that is not there.
+
+Full teardown, once the data is archived off the droplet and the paper is out:
+remove the service block, its network, and its `depends_on` entry from
+`compose.yml`, the site block from `Caddyfile`, the service from `SERVICES` in
+`backup.sh`, and the DNS record. Keep the study directory in Git — it is the
+record of what participants saw. Remove the volume last and deliberately
+(`docker volume rm studies_msm_mobi_data`), never with `down -v`, and only
+once you have verified a backup restores.
+
+### Applying a change to either
+
+Both are container-level settings, so they take effect on recreate:
+
+```bash
+./backup.sh                 # first, if a study is live
+docker compose up -d        # recreates every container whose config changed
+docker compose ps
+```
+
+This is the one case where the bare `docker compose up -d` is correct rather
+than dangerous — the networks change for every service at once. It restarts
+every study on the droplet, so do it between recruitment batches, not during
+one.
+
+### Narrowing further than this script can
+
+Nothing above constrains a person in the `docker` group, and
+`grant-access.sh` cannot change that. If the requirement is that a
+collaborator genuinely cannot reach another study's data, there are two
+honest options:
+
+- **`sudo` wrappers instead of the `docker` group.** Write root-owned,
+  argument-free scripts — `/usr/local/bin/msm-deploy`, `msm-logs`,
+  `msm-screen` — each doing one fixed thing, and grant exactly those in
+  `sudoers`. The person is then not in `docker` at all: no mounting volumes,
+  no `compose exec`, no reading another study's `.env`. Fixed command lines
+  with no arguments are what makes this hold; the moment arguments pass
+  through to `docker`, it is root again. The cost is that anything you did
+  not anticipate comes back to you.
+- **A separate droplet per study.** $6–12/month, and the only option with no
+  caveats attached.
+
 ## Access
 
 Decide what the person actually needs before granting anything, because the
@@ -438,11 +639,26 @@ three levels differ enormously in what they expose:
 **What deploy access grants, unavoidably.** Membership of the `docker` group
 is root-equivalent: a member can mount any volume, so they can read every
 study's database and therefore all participant data, not only the study they
-came for. Compose also reads each study's `.env` as the invoking user, so
-they can read every API key, every `ADMIN_TOKEN`, and DASH's
-`PHONE_HASH_SALT`. There is no way to grant "may rebuild a container"
-without those two. It is a data-access decision before it is a technical
-one; check it against the protocol that governs the data.
+came for. `docker run -v dash_data:/d alpine cat /d/study.db` is the whole
+attack, and `docker compose exec dash printenv` gets the secrets. There is no
+way to grant "may rebuild a container" without that. It is a data-access
+decision before it is a technical one; check it against the protocol that
+governs the data.
+
+`grant-access.sh` takes a list of studies and makes only those studies'
+`.env` files readable to the person, leaving the rest at `600`. That is worth
+doing, but be precise about what it is: it closes the **accidental** path — a
+`grep -r` across the checkout, a `cat */.env`, a tab-completion into the
+wrong directory — which is the disclosure that actually happens between
+colleagues. It does not close the deliberate one, because file modes do not
+constrain a `docker` group member. If you need the deliberate path closed
+too, see [Narrowing further than this script
+can](#narrowing-further-than-this-script-can).
+
+The checkout itself is shared whole and cannot be split per study: one Git
+working tree needs write access across all of it to `git pull`. That is
+acceptable because the source is public on GitHub — the `.env` files are the
+secrets, and those are what the study list governs.
 
 Note also that a DigitalOcean **team** invitation is a different thing
 entirely, and not what this section is about: it grants the control panel —
@@ -458,17 +674,41 @@ if they have none. Then, on the droplet:
 
 ```bash
 cd ~/studies && git pull
-sudo ./grant-access.sh dan 'ssh-ed25519 AAAAC3Nza... dan@example.org'
+sudo ./grant-access.sh dan 'ssh-ed25519 AAAAC3Nza... dan@example.org' msm-mobi
 ```
 
-Quote the key. `grant-access.sh` creates the account, grants the `docker`
-group and a share of this checkout, then **verifies the result by running the
-real commands as that person** — reach the checkout, write to it, fetch from
-GitHub, run `docker compose`, read each `.env` — and prints the exact
-instructions to send them. It is idempotent, so re-running it on someone who
-already has access changes nothing and just re-reports the checks. It
-validates the public key before touching anything, because a key pasted
-through a chat client arrives wrapped across lines more often than not.
+Quote the key. The trailing arguments are the studies they need; `all` grants
+every study on the box. **The list is required** — which studies' secrets a
+person can read is a decision, and a default would make it silently. A name
+that is not a study directory aborts before anything changes, so a typo
+cannot grant nothing and look like success.
+
+`grant-access.sh` creates the account, grants the `docker` group and a share
+of this checkout, sets the named studies' `.env` to `640` and forces every
+other study's to `600`, then **verifies the result by running the real
+commands as that person** — reach the checkout, write to it, fetch from
+GitHub, run `docker compose`, read the granted `.env` files, and *fail* if an
+ungranted one turns out to be readable — and prints the exact instructions to
+send them. It validates the public key before touching anything, because a
+key pasted through a chat client arrives wrapped across lines more often than
+not.
+
+It is idempotent, and re-running it with a **different** list moves the modes
+to match, in both directions:
+
+```bash
+sudo ./grant-access.sh dan 'ssh-ed25519 AAAA...' msm-mobi dash   # widen
+sudo ./grant-access.sh dan 'ssh-ed25519 AAAA...' msm-mobi        # narrow again
+```
+
+That matters because the script's recursive `chmod g+rwX` over the checkout
+loosens every `.env` on the way past; the per-study pass runs afterwards and
+puts the ungranted ones back to `600`. Re-running is the supported way to
+change someone's scope — there is no separate subcommand.
+
+Each grant is recorded in `.access/<user>` (git-ignored) so that "who can read
+what" is answerable later without reading file modes, and so `--revoke` can
+name what the person actually had.
 
 **Log out and back in afterwards.** Group membership applies to new sessions
 only, so your own `studies` membership is not active in the session that ran
@@ -503,18 +743,26 @@ The script prints this with the real values filled in:
 > ssh dan@167.71.248.46
 > cd /home/arno/studies
 > git pull
-> docker compose up -d --build msm-mobi    # name the service, always
+> docker compose up -d --build msm-mobi
 > docker compose ps                        # should reach "healthy" within ~40s
 > docker compose logs -f msm-mobi          # Ctrl-C stops following
 > ```
 >
-> **Always name the service.** A bare `docker compose up -d` also restarts
-> the other study on this droplet. And never `docker compose down -v`, which
-> deletes the data volumes.
+> **Always name your own service.** A bare `docker compose up -d` restarts
+> every study on the droplet, including other people's live ones. And never
+> `docker compose down -v`, which deletes the data volumes.
 >
 > Participants mid-session survive a rebuild — they resume at the same step —
 > but would meet new wording from their next turn, so deploy between
 > recruitment batches rather than during one.
+>
+> Changes go through GitHub, not this checkout: edit on your own machine,
+> push, then `git pull` here.
+
+The service names in that block are the ones you granted, not every service on
+the box, so the person is told to name their own. The last paragraph is there
+because the checkout is shared: edits made in place collide with yours and
+leave it ambiguous what is deployed.
 
 That is the [deploy loop](#part-2--rebuild-and-deploy) above with an absolute
 path in place of `~/studies`, and nothing else: the script sets Git's
@@ -532,10 +780,17 @@ actually ends deploy access, and leaves the account in place — it can do
 nothing without those groups. To remove the account and its home as well,
 the script prints the `deluser` command.
 
-Either way they have had read access to every secret in every `.env`, so
-rotate `ADMIN_TOKEN` and the vendor API keys if the parting is not amicable.
-`PHONE_HASH_SALT` is the exception that cannot be rotated — see the warning
-in [dash/README.md](dash/README.md#configuration--dashenv).
+The script prints the studies they were granted, from `.access/<user>`, and
+then clears that record. Rotate `ADMIN_TOKEN` and the vendor API keys for
+those studies if the parting is not amicable.
+
+Judge the other studies by how the parting went. The granted list is what
+they could read without trying; the `docker` group they just lost was
+root-equivalent the whole time they had it, so a deliberate reader could have
+taken anything on the box. If that possibility matters here, treat every
+secret as exposed rather than only the listed ones. `PHONE_HASH_SALT` is the
+one that cannot be rotated either way — see the warning in
+[dash/README.md](dash/README.md#configuration--dashenv).
 
 ## Troubleshooting
 

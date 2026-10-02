@@ -47,6 +47,10 @@ EXPOSE 8000
 # container address for every request. Without it the per-address rate limit
 # on /api/opt-in sees one caller for the whole study and starts refusing real
 # participants. Trusting the header from any peer is safe here only because
-# the container publishes no port: Caddy is the sole route in.
+# Caddy is genuinely the sole route in: the container publishes no port, and
+# compose.yml puts it on a network of its own, so no sibling study's container
+# can reach this port to forge the header either. Both halves of that are
+# load-bearing -- publish a port or share a network and this becomes a way to
+# spoof the address the rate limit counts.
 CMD ["uvicorn", "study_site:app", "--host", "0.0.0.0", "--port", "8000", \
      "--workers", "1", "--proxy-headers", "--forwarded-allow-ips", "*"]

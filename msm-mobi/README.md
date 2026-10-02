@@ -482,6 +482,14 @@ It was upgraded to 2 GB / 1 vCPU before the first pilot, which leaves
 headroom for both studies at hundreds of concurrent participants; `free -h`
 on the droplet says how much is left.
 
+This container is capped at 768 MB by `mem_limit` in `compose.yml`, so a leak
+here cannot take DASH down with it — and, equally, this study dies rather
+than degrades if it ever reaches that ceiling. The cap is a ceiling, not a
+reservation: it costs nothing while unused. `../capacity.sh` on the droplet
+reports this container against it; raise the cap before a larger batch if a
+live one sits above about half. The reasoning is in [Isolation between
+studies](../README.md#isolation-between-studies).
+
 ## Troubleshooting
 
 **Container restarts repeatedly.** `docker compose logs msm-mobi`. A

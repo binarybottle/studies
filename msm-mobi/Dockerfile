@@ -40,6 +40,8 @@ EXPOSE 8000
 # CPU, which this app does not use, and would need the per-participant lock
 # moved out of process memory. --proxy-headers makes uvicorn read the client
 # address from Caddy's X-Forwarded-For; trusting it from any peer is safe only
-# because the container publishes no port and Caddy is the sole route in.
+# because Caddy is genuinely the sole route in -- the container publishes no
+# port, and compose.yml puts it on a network of its own, so no sibling study's
+# container can reach this port to forge the header either.
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", \
      "--workers", "1", "--proxy-headers", "--forwarded-allow-ips", "*"]

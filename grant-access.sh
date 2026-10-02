@@ -1,20 +1,32 @@
 #!/usr/bin/env bash
 # Grant (or revoke) deploy access to this droplet for one person.
 #
-#   sudo ./grant-access.sh dan 'ssh-ed25519 AAAA... dan@example.org'
+#   sudo ./grant-access.sh dan 'ssh-ed25519 AAAA... dan@example.org' msm-mobi
+#   sudo ./grant-access.sh dan 'ssh-ed25519 AAAA...' msm-mobi dash
+#   sudo ./grant-access.sh dan 'ssh-ed25519 AAAA...' all
 #   sudo ./grant-access.sh --revoke dan
 #
 # Creates the account from their public key, gives it the docker group and a
-# share of this checkout, then verifies the result by running the real
-# commands as that user. Idempotent: re-running it for someone who already
-# has access changes nothing and just re-reports the checks.
+# share of this checkout, makes only the named studies' .env files readable to
+# them, then verifies the result by running the real commands as that user --
+# including checking that the studies you did NOT name stay unreadable.
+# Idempotent: re-running it changes nothing and just re-reports the checks,
+# and re-running with a different study list moves the .env modes to match.
 #
-# READ THIS BEFORE GRANTING. Deploy access is data access, and cannot be
-# narrowed. The docker group is root-equivalent, so the person can mount any
-# volume and read every study's database, not only the one they came for. And
-# Compose reads each study's .env as whoever invokes it, so they can read
-# every API key and admin token on the box. See the Access section of
-# README.md.
+# READ THIS BEFORE GRANTING. Deploy access is data access, and the study list
+# narrows only the accidental path, not the deliberate one. The docker group
+# is root-equivalent: a member can `docker run -v dash_data:/d alpine cat
+# /d/study.db`, or `docker compose exec dash printenv`, and get a study you
+# did not name here. File modes do not constrain them. What the list buys is
+# that a `grep -r` or a stray `cat */.env` across the checkout no longer
+# sweeps up every study's secrets -- which is the mistake that actually
+# happens. If the requirement is that they genuinely cannot reach another
+# study's data, do not put them in the docker group at all; see Narrowing
+# further than this script can in README.md.
+#
+# The checkout itself is shared whole, and cannot be narrowed per study: a
+# single Git working tree needs write access across all of it to pull. The
+# source is public on GitHub anyway. The .env files are the secrets.
 #
 # Everything it does is derived from where this script lives, so the checkout
 # can move without editing anything here.
@@ -53,8 +65,20 @@ if [ "${1:-}" = "--revoke" ]; then
 	say "To remove the account and its home as well:"
 	say "    sudo deluser --remove-home ${USER_NAME}"
 	say ""
-	say "They have had read access to every secret in every .env. Rotate"
-	say "ADMIN_TOKEN and the vendor API keys if the parting is not amicable."
+	# What to rotate depends on what they were granted, but the docker group
+	# means the honest answer is "assume everything on the box". The record
+	# says what they could read without trying.
+	RECORD="${STACK_DIR}/.access/${USER_NAME}"
+	if [ -f "${RECORD}" ]; then
+		say "They were granted: $(tr '\n' ' ' < "${RECORD}")"
+		rm -f "${RECORD}"
+	fi
+	say ""
+	say "Rotate ADMIN_TOKEN and the vendor API keys for those studies if the"
+	say "parting is not amicable. And note that the docker group they just lost"
+	say "was root-equivalent while they had it, so a deliberate reader could"
+	say "have reached every study, not only the granted ones; if that matters"
+	say "here, treat every secret on the box as exposed."
 	say "PHONE_HASH_SALT cannot be rotated -- see dash/README.md."
 	exit 0
 fi
@@ -63,11 +87,59 @@ fi
 
 USER_NAME="${1:-}"
 PUBKEY="${2:-}"
-if [ -z "${USER_NAME}" ] || [ -z "${PUBKEY}" ]; then
-	say "usage: sudo $0 USER 'ssh-ed25519 AAAA... comment'"
+shift 2 2>/dev/null || true
+
+# Every study directory, meaning every directory holding a Dockerfile. Derived
+# rather than listed so a new study needs no edit here.
+ALL_STUDIES=()
+for d in "${STACK_DIR}"/*/Dockerfile; do
+	[ -e "${d}" ] || continue
+	ALL_STUDIES+=("$(basename "$(dirname "${d}")")")
+done
+
+if [ -z "${USER_NAME}" ] || [ -z "${PUBKEY}" ] || [ "$#" -eq 0 ]; then
+	say "usage: sudo $0 USER 'ssh-ed25519 AAAA... comment' STUDY [STUDY...]"
 	say "       sudo $0 --revoke USER"
+	say ""
+	say "Studies on this host: ${ALL_STUDIES[*]:-none found}"
+	say "Name only the ones they need, or 'all'. The list is required because"
+	say "which studies' secrets a person can read is a decision, not a default."
 	exit 1
 fi
+
+# Requested studies, validated against what exists. A typo must not silently
+# grant nothing (or everything).
+if [ "${#ALL_STUDIES[@]}" -eq 0 ]; then
+	say "No study directories found in ${STACK_DIR}; is this the right checkout?"
+	exit 1
+fi
+if [ "$1" = "all" ]; then
+	STUDIES=("${ALL_STUDIES[@]}")
+else
+	STUDIES=()
+	for requested in "$@"; do
+		found=0
+		for existing in "${ALL_STUDIES[@]}"; do
+			[ "${requested}" = "${existing}" ] && found=1 && break
+		done
+		if [ "${found}" -eq 0 ]; then
+			say "No such study: ${requested}"
+			say "Studies on this host: ${ALL_STUDIES[*]:-none found}"
+			say "Nothing was changed."
+			exit 1
+		fi
+		STUDIES+=("${requested}")
+	done
+fi
+
+# Is $1 in the granted list?
+granted() {
+	local name="$1" s
+	for s in "${STUDIES[@]}"; do
+		[ "${s}" = "${name}" ] && return 0
+	done
+	return 1
+}
 
 # Validate the key before creating anything. A public key pasted through a
 # chat client or an editor arrives wrapped across lines or with the comment
@@ -91,6 +163,7 @@ OWNER_HOME="$(getent passwd "${OWNER}" | cut -d: -f6)"
 say "Granting deploy access to ${USER_NAME}"
 say "  key        ${FINGERPRINT}"
 say "  checkout   ${STACK_DIR} (owned by ${OWNER})"
+say "  studies    ${STUDIES[*]}"
 
 step "Account"
 if id -u "${USER_NAME}" >/dev/null 2>&1; then
@@ -134,10 +207,20 @@ chmod -R g+rwX "${STACK_DIR}"
 find "${STACK_DIR}" -type d -exec chmod g+s {} +
 ok "${STACK_DIR} is group-writable, with setgid on directories"
 
+# Compose needs to read the .env of a study they deploy, so those go to 640.
+# The rest are forced back to 600 on every run, so re-running with a shorter
+# study list actually takes access away instead of only adding it.
 for env_file in "${STACK_DIR}"/*/.env; do
 	[ -e "${env_file}" ] || continue
-	chmod 640 "${env_file}"
-	ok "$(basename "$(dirname "${env_file}")")/.env is group-readable (Compose needs it)"
+	study="$(basename "$(dirname "${env_file}")")"
+	if granted "${study}"; then
+		chmod 640 "${env_file}"
+		ok "${study}/.env is group-readable (Compose needs it)"
+	else
+		chown "${OWNER}" "${env_file}"
+		chmod 600 "${env_file}"
+		ok "${study}/.env left at 600 (not granted)"
+	fi
 done
 
 step "Git"
@@ -158,6 +241,15 @@ git config --system --add safe.directory "${STACK_DIR}" 2>/dev/null || true
 git config --system --get-all safe.directory | grep -qxF "${STACK_DIR}" \
 	&& ok "safe.directory set system-wide (no per-user setup needed)" \
 	|| bad "could not set safe.directory system-wide"
+
+step "Record"
+# Who has access to what is otherwise only inferable from /etc/group plus the
+# .env modes, which is no way to answer the question months later or to brief
+# whoever takes this over. Not committed: see .gitignore.
+install -d -m 750 -o "${OWNER}" -g "${GROUP}" "${STACK_DIR}/.access"
+printf '%s\n' "${STUDIES[@]}" > "${STACK_DIR}/.access/${USER_NAME}"
+chmod 640 "${STACK_DIR}/.access/${USER_NAME}"
+ok "recorded in .access/${USER_NAME}: ${STUDIES[*]}"
 
 # --- verify, as them ------------------------------------------------------
 #
@@ -181,11 +273,20 @@ as_them "cd '${STACK_DIR}' && git fetch --dry-run" \
 	&& ok "can fetch from GitHub" || bad "cannot fetch from GitHub"
 as_them "cd '${STACK_DIR}' && docker compose ps" \
 	&& ok "can run docker compose" || bad "cannot run docker compose"
+# Both directions are checked. An ungranted .env that is readable is the
+# failure this study list exists to prevent, so it is a FAIL, not a note.
 for env_file in "${STACK_DIR}"/*/.env; do
 	[ -e "${env_file}" ] || continue
-	as_them "head -c1 '${env_file}'" \
-		&& ok "can read $(basename "$(dirname "${env_file}")")/.env" \
-		|| bad "cannot read $(basename "$(dirname "${env_file}")")/.env"
+	study="$(basename "$(dirname "${env_file}")")"
+	if granted "${study}"; then
+		as_them "head -c1 '${env_file}'" \
+			&& ok "can read ${study}/.env" \
+			|| bad "cannot read ${study}/.env"
+	else
+		as_them "head -c1 '${env_file}'" \
+			&& bad "can read ${study}/.env, which was not granted" \
+			|| ok "cannot read ${study}/.env (not granted)"
+	fi
 done
 
 # --- report ---------------------------------------------------------------
@@ -202,16 +303,22 @@ cat <<REPORT
     ssh ${USER_NAME}@${IP:-<droplet ip>}
     cd ${STACK_DIR}
     git pull
-    docker compose up -d --build <service>   # name the service, always
+    docker compose up -d --build ${STUDIES[0]}
     docker compose ps                        # should reach "healthy" in ~40s
-    docker compose logs -f <service>          # Ctrl-C stops following
+    docker compose logs -f ${STUDIES[0]}     # Ctrl-C stops following
 
-  Services on this host: $(cd "${STACK_DIR}" && docker compose config --services 2>/dev/null | tr '\n' ' ')
+  Yours: ${STUDIES[*]}
+  Also on this host: $(cd "${STACK_DIR}" && docker compose config --services 2>/dev/null | tr '\n' ' ')
 
-  A bare 'docker compose up -d' restarts every study on the droplet, so
-  always name one. Never 'docker compose down -v', which deletes the data
-  volumes. Participants mid-session survive a rebuild but meet new wording
-  from their next turn, so deploy between recruitment batches.
+  Always name your own service. A bare 'docker compose up -d' restarts every
+  study on the droplet, including other people's live ones. Never
+  'docker compose down -v', which deletes the data volumes -- that is the
+  participant databases. Participants mid-session survive a rebuild but meet
+  new wording from their next turn, so deploy between recruitment batches.
+
+  Changes go through GitHub, not this checkout: edit on your own machine,
+  push, then 'git pull' here. The checkout is shared, so edits made in place
+  collide and leave it ambiguous what is actually deployed.
 
 REPORT
 
